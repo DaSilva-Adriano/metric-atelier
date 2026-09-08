@@ -1,0 +1,115 @@
+# Metric Atelier
+
+A local Python app for importing, grouping, annotating, filtering, and comparing video quality metric CSVs (PSNR / SSIM / MS-SSIM / VMAF / LPIPS / ERQA). Charts and tables are meant to drop straight into a bachelor thesis or a report.
+
+No login, no cloud, no telemetry. Bound to `127.0.0.1` by default. Original CSV files are **never rewritten**.
+
+## Install and run
+
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+.
+
+Double-click `start.bat`, or from a terminal:
+
+```bash
+uv sync
+uv run metric-atelier
+```
+
+Then open http://127.0.0.1:8080 if the browser does not open on its own.
+
+Useful flags:
+
+```bash
+uv run metric-atelier --port 8080
+uv run metric-atelier --data-dir D:\metrics\atelier
+uv run metric-atelier --no-browser
+```
+
+Data directory (override with `--data-dir` or `METRIC_ATELIER_HOME`):
+
+| Path | What |
+| --- | --- |
+| `data/atelier.sqlite` | Names, notes, tags, hidden flags, order, chart settings, colors |
+| `data/imports/` | Read-only snapshots of imported CSVs |
+| `data/exports/` | PNG / SVG / PDF figures and table exports |
+
+Raw metric values live in the database as imported snapshots. Editing a friendly name or hiding a row never touches the file on disk.
+
+## Quick start with the samples
+
+Empty library → **Load sample datasets**, or import `samples/beauty.csv` and `samples/kartingtime.csv`.
+
+You should get two videos:
+
+- **Beauty** — 360p / 480p / 1080p / 2160p × bicubic / lanczos / vsr, including a broken 1080p VSR row and a resolution-mismatch error row
+- **Karting Time** — 360p / 720p / 1080p × bicubic / lanczos / vsr, parsed from long `s-KartingTime_3840x2160_…` names
+
+A later CSV whose `distorted` names still start with `beauty` attaches to Beauty, not a second card.
+
+## How grouping works
+
+Every CSV row is an immutable **Run**. User metadata (name, notes, hidden, order, color) is a separate annotation layer.
+
+`video_id` is a slug of the **content title only** — not resolution, not method:
+
+| Filename | Title | `video_id` |
+| --- | --- | --- |
+| `v-beauty-360p-24fps-bicubic` | Beauty | `beauty` |
+| `v-beauty-1080p-24fps-vsr` | Beauty | `beauty` |
+| `s-KartingTime_3840x2160_60fps_yuv444_16bits_70-720p-60fps-vsr` | Karting Time | `kartingtime` |
+
+The parser does not assume a single pattern:
+
+- **Pattern A** — prefix + CamelCase title + source `WxH` / fps / yuv / bits + target `720p-60fps-vsr`
+- **Pattern B** — `v-beauty-360p-24fps-bicubic`
+- Unknown methods stay as the raw token (`splatting`, …)
+- Names that have no title land in **Unassigned** so you can move them
+
+Re-import of the same file is deduplicated (`run_id` = hash of file content + row index + distorted name). Settings → Import chooses **skip** or **refresh metrics** (notes, names, hidden, and order are never clobbered).
+
+## Hide vs delete
+
+**Hide** is the first-class action for junk (wrong resolution, failed VSR, aborted encode, collapsed PSNR). Hidden runs:
+
+- disappear from the default table and from charts
+- remain listed under **Hidden (n)** and can be restored
+- never modify the source CSV
+- are excluded from exported figures unless **Include hidden in charts** is on
+
+Filter chips for method / resolution are view state only. Soft-delete (Settings → Data) removes a run from the UI with undo; still no writes to original CSVs.
+
+## Keyboard
+
+| Key | Action |
+| --- | --- |
+| `/` | Focus search |
+| `i` | Import |
+| `h` | Hide selected runs |
+| `p` | Presentation mode (hides edit chrome, larger type) |
+| `?` | Shortcut list |
+| `1` `2` `3` | Library / Compare / Settings |
+
+## Screenshot tips for thesis figures
+
+1. Open the video, hide the broken rows, sort by resolution.
+2. Turn on **Presentation**.
+3. Use **Small multiples** (default): one panel per hero metric, shared categorical x-axis, colorblind-safe method colors (Okabe–Ito).
+4. Edit the chart title (`Beauty — 24 fps, upscaling to 4K`).
+5. Export **PNG 2×** (about 2000 px wide, white background), or SVG / PDF.
+6. Tables use tabular lining figures and never dump raw 15-decimal floats (VMAF 1 dp, PSNR 2, SSIM / LPIPS / ERQA 3).
+
+Direction is labeled on every column and axis (`↑` higher is better, `↓` lower is better). LPIPS and ERQA are treated as lower-is-better, matching the rest of this tool.
+
+Figure export uses Plotly + Kaleido. Kaleido 1.x needs a local Chrome/Chromium. If PNG/PDF fails, an HTML fallback is written next to the export and the UI says so.
+
+## Tests and lint
+
+```bash
+uv run pytest
+uv run ruff check src tests
+uv run ruff format src tests
+```
+
+## Portable annotations
+
+Settings → Data → **Export annotations JSON** saves names, notes, tags, hidden flags, order, and chart settings. Re-import it after loading the same CSVs on another machine. Metric values themselves stay in the SQLite snapshots, not in that JSON.

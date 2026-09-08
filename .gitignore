@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.ruff_cache/
+.nicegui/
+
+# Virtual environments
+.venv
+
+# User data (imported snapshots, sqlite, exports)
+data/*
+!data/.gitkeep
+exports/
+
+# OS
+.DS_Store
+Thumbs.db
