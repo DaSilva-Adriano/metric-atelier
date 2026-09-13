@@ -76,7 +76,13 @@ Re-import of the same file is deduplicated (`run_id` = hash of file content + ro
 - never modify the source CSV
 - are excluded from exported figures unless **Include hidden in charts** is on
 
-Filter chips for method / resolution are view state only. Soft-delete (Settings → Data) removes a run from the UI with undo; still no writes to original CSVs.
+Filter chips for method / resolution are view state only.
+
+**Delete a video** from the library card (trash icon) or the video page. That removes the source and all of its runs from Metric Atelier.
+
+**Delete a row** in editing mode (not Presentation): select rows → **Delete selected**, or open a row and **Delete row**. Metric numbers cannot be edited — imported values stay as imported.
+
+Original CSVs are never rewritten. Soft-delete (Settings → Data) still exists for imported-file cleanup with undo.
 
 ## Keyboard
 
@@ -93,10 +99,12 @@ Filter chips for method / resolution are view state only. Soft-delete (Settings 
 
 1. Open the video, hide the broken rows, sort by resolution.
 2. Turn on **Presentation**.
-3. Use **Small multiples** (default): one panel per hero metric, shared categorical x-axis, colorblind-safe method colors (Okabe–Ito).
-4. Edit the chart title (`Beauty — 24 fps, upscaling to 4K`).
-5. Export **PNG 2×** (about 2000 px wide, white background), or SVG / PDF.
-6. Tables use tabular lining figures and never dump raw 15-decimal floats (VMAF 1 dp, PSNR 2, SSIM / LPIPS / ERQA 3).
+3. Pick a chart type: small multiples (default), grouped bar, slope, delta, ranked bars, horizontal bars, heatmap, scatter, or radar.
+4. Set **Order** so categories or bars follow resolution, method, value (low→high or high→low), or the table’s custom order. Method order and resolution order live under Settings → Display.
+5. Optional: Settings → Charts → **Metric thresholds** (VMAF, PSNR, …). Charts get a dotted reference line; cells that miss the threshold are flagged. ↑ metrics fail below the line; ↓ metrics fail above it.
+6. Edit the chart title (`Beauty — 24 fps, upscaling to 4K`).
+7. Export **PNG 2×** (about 2000 px wide, white background), SVG / PDF, or **Export JSON**.
+8. Tables use tabular lining figures and never dump raw 15-decimal floats (VMAF 1 dp, PSNR 2, SSIM / LPIPS / ERQA 3).
 
 Direction is labeled on every column and axis (`↑` higher is better, `↓` lower is better). LPIPS and ERQA are treated as lower-is-better, matching the rest of this tool.
 
@@ -110,6 +118,8 @@ uv run ruff check src tests
 uv run ruff format src tests
 ```
 
-## Portable annotations
+## Portable annotations and dataset JSON
 
-Settings → Data → **Export annotations JSON** saves names, notes, tags, hidden flags, order, and chart settings. Re-import it after loading the same CSVs on another machine. Metric values themselves stay in the SQLite snapshots, not in that JSON.
+Settings → Data → **Export annotations JSON** saves names, notes, tags, hidden flags, order, and chart settings. Re-import it after loading the same CSVs on another machine.
+
+**Export JSON** on a video (or Settings → Data → **Export dataset JSON**) writes a dataset file where `method` (`vsr`, `bicubic`, …) and `resolution` (`720p`, `1080p`, …) are first-class fields, along with metric values. Do not parse those out of `raw_name` — the filename is only a label.

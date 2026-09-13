@@ -260,6 +260,23 @@ class Store:
             session.expunge(target)
             return target
 
+    def delete_video(self, video_id: str) -> int:
+        """Permanently remove a source video and all of its runs. Original CSVs are untouched."""
+        if video_id == UNASSIGNED_VIDEO_ID:
+            raise ValueError("Cannot delete the Unassigned group; delete or move its runs instead.")
+        with self.session() as session:
+            video = session.get(SourceVideo, video_id)
+            if video is None:
+                return 0
+            runs = list(session.exec(select(RunRecord).where(RunRecord.video_id == video_id)).all())
+            file_hashes = {run.file_hash for run in runs if run.file_hash}
+            for run in runs:
+                session.delete(run)
+            session.delete(video)
+            self._cleanup_orphan_imports(session, file_hashes)
+            session.commit()
+            return len(runs)
+
     def list_runs(
         self,
         video_id: str | None = None,
@@ -336,6 +353,26 @@ class Store:
                 session.add(record)
             session.commit()
 
+    def purge_runs(self, run_ids: Iterable[str]) -> int:
+        """Permanently delete runs from the database. Original CSVs are untouched."""
+        ids = [rid for rid in run_ids if rid]
+        if not ids:
+            return 0
+        with self.session() as session:
+            file_hashes: set[str] = set()
+            count = 0
+            for run_id in ids:
+                record = session.get(RunRecord, run_id)
+                if record is None:
+                    continue
+                if record.file_hash:
+                    file_hashes.add(record.file_hash)
+                session.delete(record)
+                count += 1
+            self._cleanup_orphan_imports(session, file_hashes)
+            session.commit()
+            return count
+
     def reorder_runs(self, run_ids: Sequence[str]) -> None:
         with self.session() as session:
             for index, run_id in enumerate(run_ids):
@@ -384,6 +421,17 @@ class Store:
                 session.delete(imported)
             session.commit()
         return count
+
+    def _cleanup_orphan_imports(self, session: Session, file_hashes: Iterable[str]) -> None:
+        for file_hash in file_hashes:
+            remaining = session.exec(
+                select(func.count(RunRecord.run_id)).where(RunRecord.file_hash == file_hash)
+            ).one()
+            if remaining:
+                continue
+            imported = session.get(ImportedFile, file_hash)
+            if imported is not None:
+                session.delete(imported)
 
     def preview_sources(
         self,
@@ -654,6 +702,55 @@ class Store:
             ],
         }
 
+    def export_dataset(self, video_id: str | None = None) -> dict[str, Any]:
+        """Export runs with method and resolution as first-class fields, not parsed from names."""
+        settings = self.get_settings()
+        if video_id is not None:
+            video = self.get_video(video_id)
+            videos = [video] if video is not None else []
+        else:
+            videos = [v for v in self.list_videos()]
+        payload_videos: list[dict[str, Any]] = []
+        for video in videos:
+            if video is None:
+                continue
+            runs = self.list_runs(video.video_id, include_hidden=True, include_deleted=False)
+            if video.video_id == UNASSIGNED_VIDEO_ID and not runs:
+                continue
+            payload_videos.append(
+                {
+                    "video_id": video.video_id,
+                    "display_name": video.display_name,
+                    "notes": video.notes,
+                    "tags": list(video.tags or []),
+                    "sort_index": video.sort_index,
+                    "reference": {
+                        "width": video.reference_width,
+                        "height": video.reference_height,
+                        "fps": video.reference_fps,
+                        "color": video.reference_color,
+                        "bits": video.reference_bits,
+                    },
+                    "chart_title": video.chart_title,
+                    "chart_caption": video.chart_caption,
+                    "runs": [_run_to_dataset(run) for run in runs],
+                }
+            )
+        return {
+            "version": 2,
+            "kind": "metric-atelier-dataset",
+            "exported_at": _now().isoformat(),
+            "settings": {
+                "hero_metrics": list(settings.hero_metrics),
+                "decimal_places": dict(settings.decimal_places),
+                "method_display_aliases": dict(settings.method_display_aliases),
+                "method_order": list(settings.method_order),
+                "resolution_order": list(settings.resolution_order),
+                "metric_thresholds": dict(settings.metric_thresholds),
+            },
+            "videos": payload_videos,
+        }
+
     def import_annotations(self, payload: dict[str, Any]) -> None:
         with self.session() as session:
             if "settings" in payload and isinstance(payload["settings"], dict):
@@ -766,6 +863,62 @@ class Store:
         record.warnings = row.warnings
         record.errors = row.errors
         record.path = row.path
+
+
+def _json_number(value: float | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+    return number
+
+
+def _run_to_dataset(run: RunDTO) -> dict[str, Any]:
+    metrics = {key: _json_number(value) for key, value in run.metrics_dict().items()}
+    metrics = {key: value for key, value in metrics.items() if value is not None}
+    extra = {}
+    for key, value in (run.extra_columns or {}).items():
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            number = _json_number(float(value))
+            if number is not None:
+                extra[key] = number
+        elif isinstance(value, (str, bool)) or value is None:
+            extra[key] = value
+    return {
+        "run_id": run.run_id,
+        "video_id": run.video_id,
+        "method": run.method,
+        "method_raw": run.method_raw,
+        "method_known": run.method_known,
+        "resolution": run.resolution_label,
+        "width": run.width,
+        "height": run.height,
+        "fps": _json_number(run.fps),
+        "source_width": run.source_width,
+        "source_height": run.source_height,
+        "source_fps": _json_number(run.source_fps),
+        "source_color": run.source_color,
+        "source_bits": run.source_bits,
+        "metrics": metrics,
+        "lpips_label": run.lpips_label,
+        "erqa_label": run.erqa_label,
+        "display_name": run.display_name,
+        "notes": run.notes,
+        "hidden": run.hidden,
+        "sort_index": run.sort_index,
+        "color": run.color,
+        "warnings": list(run.warnings or []),
+        "errors": list(run.errors or []),
+        "raw_name": run.raw_name,
+        "source_csv": run.source_csv,
+        "source_basename": run.source_basename,
+        "row_index": run.row_index,
+        "extra_columns": extra,
+    }
 
 
 def resolve_data_dir(explicit: Path | None = None) -> Path:

@@ -7,7 +7,7 @@ import json
 from nicegui import ui
 
 from metric_atelier.metrics import CATALOG, DEFAULT_HERO_METRICS
-from metric_atelier.models import AppSettings, IdentityRule
+from metric_atelier.models import CHART_ORDER_LABELS, CHART_TYPE_LABELS, AppSettings, IdentityRule
 from metric_atelier.store import get_store, open_directory
 from metric_atelier.theme import OKABE_ITO
 from metric_atelier.views.common import app_frame
@@ -119,6 +119,15 @@ def _display_panel(store, settings: AppSettings) -> None:
             resolution_order=[p.strip() for p in (e.value or "").split(",") if p.strip()],
         )
     )
+    ui.input(
+        "Method order (comma separated)",
+        value=", ".join(settings.method_order),
+    ).classes("w-full").on_value_change(
+        lambda e: _save(
+            store,
+            method_order=[p.strip() for p in (e.value or "").split(",") if p.strip()],
+        )
+    )
 
 
 def _toggle_hero(store, key: str, on: bool) -> None:
@@ -182,16 +191,15 @@ def _import_panel(store, settings: AppSettings) -> None:
 
 def _charts_panel(store, settings: AppSettings) -> None:
     ui.select(
-        {
-            "small_multiples": "Small multiples",
-            "grouped_bar": "Grouped bar",
-            "slope": "Slope / line",
-            "delta": "Delta vs baseline",
-            "radar": "Radar",
-        },
+        CHART_TYPE_LABELS,
         value=settings.default_chart_type,
         label="Default chart",
     ).classes("w-64").on_value_change(lambda e: _save(store, default_chart_type=e.value))
+    ui.select(
+        CHART_ORDER_LABELS,
+        value=settings.default_chart_order,
+        label="Default chart order",
+    ).classes("w-64").on_value_change(lambda e: _save(store, default_chart_order=e.value))
     ui.switch("Show values on bars", value=settings.show_bar_values).on_value_change(
         lambda e: _save(store, show_bar_values=bool(e.value))
     )
@@ -218,6 +226,23 @@ def _charts_panel(store, settings: AppSettings) -> None:
             spec.short_label,
             value=settings.y_axis_zero.get(key, False),
         ).on_value_change(lambda e, k=key: _set_zero(store, k, bool(e.value)))
+    ui.separator()
+    ui.label("Metric thresholds").classes("text-sm uppercase tracking-wide")
+    ui.label(
+        "Drawn as a dotted reference line on charts. Table cells that miss the threshold "
+        "are flagged. For ↑ metrics, values below the line fail; for ↓ metrics, values above fail. "
+        "Leave empty to disable."
+    ).classes("ma-hint")
+    with ui.row().classes("gap-3 flex-wrap"):
+        for key in DEFAULT_HERO_METRICS:
+            spec = CATALOG[key]
+            current = settings.metric_thresholds.get(key)
+            ui.input(
+                f"{spec.short_label} ({spec.arrow})",
+                value="" if current is None else str(current),
+            ).classes("w-36").props("dense outlined clearable").on_value_change(
+                lambda e, k=key: _set_threshold(store, k, e.value)
+            )
 
 
 def _set_zero(store, key: str, on: bool) -> None:
@@ -225,6 +250,19 @@ def _set_zero(store, key: str, on: bool) -> None:
     zeros = dict(settings.y_axis_zero)
     zeros[key] = on
     _save(store, y_axis_zero=zeros)
+
+
+def _set_threshold(store, key: str, value) -> None:
+    settings = store.get_settings()
+    thresholds = dict(settings.metric_thresholds)
+    if value is None or value == "":
+        thresholds.pop(key, None)
+    else:
+        try:
+            thresholds[key] = float(value)
+        except (TypeError, ValueError):
+            return
+    _save(store, metric_thresholds=thresholds)
 
 
 def _data_panel(store, settings: AppSettings) -> None:
@@ -277,6 +315,19 @@ def _data_panel(store, settings: AppSettings) -> None:
         ui.download.file(str(path))
 
     ui.button("Export annotations JSON", on_click=do_export).props("outline")
+
+    def do_dataset_export() -> None:
+        payload = store.export_dataset()
+        path = store.data_dir / "exports" / "dataset.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        ui.download.file(str(path))
+
+    ui.button("Export dataset JSON", on_click=do_dataset_export).props("unelevated")
+    ui.label(
+        "Dataset JSON stores method, resolution, fps, and metric values as fields. "
+        "Names are labels only — consumers should not parse vsr/bicubic/1080p out of filenames."
+    ).classes("ma-hint")
 
     async def on_ann(e) -> None:
         text = e.file.text()

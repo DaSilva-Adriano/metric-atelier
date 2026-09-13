@@ -283,6 +283,35 @@ def get_spec(key: str) -> MetricSpec | None:
     return CATALOG.get(key)
 
 
+def threshold_status(
+    key: str,
+    value: float | None,
+    thresholds: Mapping[str, float] | None,
+) -> Literal["pass", "fail", "none"]:
+    """Compare a value to a user threshold. Empty/missing threshold → none."""
+    if value is None or not thresholds or key not in thresholds:
+        return "none"
+    try:
+        limit = float(thresholds[key])
+        number = float(value)
+    except (TypeError, ValueError):
+        return "none"
+    if number != number or limit != limit:
+        return "none"
+    spec = CATALOG.get(key)
+    if spec is not None and spec.direction == "lower":
+        return "fail" if number > limit else "pass"
+    return "fail" if number < limit else "pass"
+
+
+def threshold_failed(
+    key: str,
+    value: float | None,
+    thresholds: Mapping[str, float] | None,
+) -> bool:
+    return threshold_status(key, value, thresholds) == "fail"
+
+
 def format_metric(
     key: str,
     value: float | None,

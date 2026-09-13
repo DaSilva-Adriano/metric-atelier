@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from metric_atelier.grouping import friendly_run_name, sort_runs
 from metric_atelier.ingest import CsvSource
 from metric_atelier.metrics import flag_anomalous_runs
@@ -160,3 +162,66 @@ def test_sort_by_resolution(store: Store, samples_dir: Path) -> None:
     name = friendly_run_name(ordered[0], settings)
     assert name
     assert UNASSIGNED_VIDEO_ID in {v.video_id for v in store.list_videos()}
+
+
+def test_update_run_cannot_change_metric_numbers(store: Store, samples_dir: Path) -> None:
+    store.commit_sources([_source(samples_dir / "beauty.csv")])
+    run = store.list_runs("beauty")[0]
+    original_vmaf = run.vmaf
+    original_psnr = run.psnr_y
+    store.update_run(run.run_id, vmaf=0.0, psnr_y=1.0, notes="annotation only")
+    updated = store.get_run(run.run_id)
+    assert updated is not None
+    assert updated.vmaf == original_vmaf
+    assert updated.psnr_y == original_psnr
+    assert updated.notes == "annotation only"
+
+
+def test_purge_run_removes_row(store: Store, samples_dir: Path) -> None:
+    store.commit_sources([_source(samples_dir / "beauty.csv")])
+    before = store.list_runs("beauty")
+    target = before[0]
+    removed = store.purge_runs([target.run_id])
+    assert removed == 1
+    assert store.get_run(target.run_id) is None
+    assert len(store.list_runs("beauty")) == len(before) - 1
+
+
+def test_delete_video_removes_library_source(store: Store, samples_dir: Path) -> None:
+    store.commit_sources(
+        [_source(samples_dir / "beauty.csv"), _source(samples_dir / "kartingtime.csv")]
+    )
+    n = store.delete_video("beauty")
+    assert n == 10
+    assert store.get_video("beauty") is None
+    assert store.list_runs("beauty") == []
+    assert store.get_video("kartingtime") is not None
+    assert len(store.list_runs("kartingtime")) == 9
+
+
+def test_cannot_delete_unassigned_group(store: Store) -> None:
+    with pytest.raises(ValueError):
+        store.delete_video(UNASSIGNED_VIDEO_ID)
+    assert store.get_video(UNASSIGNED_VIDEO_ID) is not None
+
+
+def test_dataset_json_uses_method_and_resolution_fields(store: Store, samples_dir: Path) -> None:
+    store.commit_sources([_source(samples_dir / "beauty.csv")])
+    payload = store.export_dataset("beauty")
+    assert payload["kind"] == "metric-atelier-dataset"
+    assert payload["version"] == 2
+    video = payload["videos"][0]
+    assert video["video_id"] == "beauty"
+    assert video["runs"]
+    vsr = next(run for run in video["runs"] if run["method"] == "vsr")
+    assert vsr["method"] == "vsr"
+    assert vsr["method_raw"]
+    assert vsr["resolution"] in {"360p", "480p", "1080p", "2160p"}
+    assert isinstance(vsr["metrics"], dict)
+    assert "vmaf" in vsr["metrics"] or "psnr_y" in vsr["metrics"]
+    for run in video["runs"]:
+        assert "method" in run
+        assert "resolution" in run
+        assert "metrics" in run
+        assert isinstance(run["metrics"], dict)
+        assert run["raw_name"], "raw_name is a label only; method/resolution are the fields"

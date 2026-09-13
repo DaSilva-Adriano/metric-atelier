@@ -18,8 +18,53 @@ UNASSIGNED_VIDEO_ID = "unassigned"
 ReimportMode = Literal["skip", "refresh"]
 ThemeName = Literal["light", "dark"]
 ColorBy = Literal["method", "resolution"]
-ChartType = Literal["small_multiples", "grouped_bar", "slope", "delta", "radar"]
+ChartType = Literal[
+    "small_multiples",
+    "grouped_bar",
+    "slope",
+    "delta",
+    "ranked_bar",
+    "horizontal_bar",
+    "heatmap",
+    "scatter",
+    "radar",
+]
+ChartOrder = Literal["resolution", "method", "value_asc", "value_desc", "table"]
 ExportBackground = Literal["white", "theme"]
+
+DEFAULT_METHOD_ORDER: tuple[str, ...] = (
+    "bicubic",
+    "bilinear",
+    "lanczos",
+    "nearest",
+    "vsr",
+    "esrgan",
+    "realesrgan",
+    "swinir",
+    "basicvsr",
+    "ia",
+    "native",
+)
+
+CHART_TYPE_LABELS: dict[str, str] = {
+    "small_multiples": "Small multiples",
+    "grouped_bar": "Grouped bar",
+    "slope": "Slope / line",
+    "delta": "Delta vs baseline",
+    "ranked_bar": "Ranked bars (one per run)",
+    "horizontal_bar": "Horizontal bars",
+    "heatmap": "Heatmap",
+    "scatter": "Scatter (two metrics)",
+    "radar": "Radar",
+}
+
+CHART_ORDER_LABELS: dict[str, str] = {
+    "resolution": "Resolution order",
+    "method": "Method order",
+    "value_asc": "Value ↑ (low to high)",
+    "value_desc": "Value ↓ (high to low)",
+    "table": "Table / custom order",
+}
 
 
 def utcnow() -> datetime:
@@ -64,6 +109,8 @@ class AppSettings(BaseModel):
     resolution_order: list[str] = Field(
         default_factory=lambda: ["360p", "480p", "720p", "1080p", "1440p", "2160p"]
     )
+    method_order: list[str] = Field(default_factory=lambda: list(DEFAULT_METHOD_ORDER))
+    metric_thresholds: dict[str, float] = Field(default_factory=dict)
     show_raw_filenames: bool = False
     language: str = "en"
 
@@ -72,6 +119,7 @@ class AppSettings(BaseModel):
     extra_parser_regexes: list[str] = Field(default_factory=list)
 
     default_chart_type: ChartType = "small_multiples"
+    default_chart_order: ChartOrder = "resolution"
     show_bar_values: bool = True
     y_axis_zero: dict[str, bool] = Field(default_factory=lambda: dict(DEFAULT_Y_AXIS_ZERO))
     color_by: ColorBy = "method"

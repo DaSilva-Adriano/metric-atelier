@@ -36,19 +36,29 @@ def resolution_sort_key(label: str, order: Sequence[str]) -> tuple[int, str]:
         return len(order), label
 
 
+def method_sort_key(method: str | None, order: Sequence[str]) -> tuple[int, str]:
+    key = method or "unknown"
+    try:
+        return order.index(key), key
+    except ValueError:
+        return len(order), key
+
+
 def sort_runs(
     runs: list[RunDTO],
     *,
     how: str,
     settings: AppSettings,
+    metric: str = "vmaf",
 ) -> list[RunDTO]:
     order = settings.resolution_order
+    methods = list(settings.method_order or [])
     if how == "resolution":
         return sorted(
             runs,
             key=lambda r: (
                 resolution_sort_key(r.resolution_label, order),
-                (r.method or ""),
+                method_sort_key(r.method, methods),
                 r.raw_name,
             ),
         )
@@ -56,7 +66,7 @@ def sort_runs(
         return sorted(
             runs,
             key=lambda r: (
-                (r.method or "zzz"),
+                method_sort_key(r.method, methods),
                 resolution_sort_key(r.resolution_label, order),
                 r.raw_name,
             ),
@@ -68,6 +78,24 @@ def sort_runs(
                 r.vmaf is None,
                 -(r.vmaf or 0.0),
                 resolution_sort_key(r.resolution_label, order),
+            ),
+        )
+    if how == "value_asc":
+        return sorted(
+            runs,
+            key=lambda r: (
+                r.metric(metric) is None,
+                r.metric(metric) if r.metric(metric) is not None else 0.0,
+                r.sort_index,
+            ),
+        )
+    if how == "value_desc":
+        return sorted(
+            runs,
+            key=lambda r: (
+                r.metric(metric) is None,
+                -(r.metric(metric) if r.metric(metric) is not None else 0.0),
+                r.sort_index,
             ),
         )
     return sorted(runs, key=lambda r: (r.sort_index, r.raw_name))

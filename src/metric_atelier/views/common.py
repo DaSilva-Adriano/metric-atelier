@@ -300,3 +300,25 @@ def status_chips(run: RunDTO) -> str:
 
 def method_chip_style(method: str | None, settings: AppSettings) -> str:
     return f"--swatch: {method_color(method, settings)}"
+
+
+def confirm_dialog(
+    title: str,
+    body: str,
+    *,
+    confirm_label: str = "Delete",
+    on_confirm: Callable[[], None],
+) -> None:
+    dialog = ui.dialog()
+    with dialog, ui.card().classes("w-[30rem] max-w-[94vw]"):
+        ui.label(title).style("font-family: var(--ma-serif); font-size: 1.2rem; font-weight: 600")
+        ui.label(body).classes("ma-lede")
+        with ui.row().classes("w-full justify-end gap-2 mt-3"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+
+            def accept() -> None:
+                dialog.close()
+                on_confirm()
+
+            ui.button(confirm_label, on_click=accept).props("unelevated color=negative")
+    dialog.open()

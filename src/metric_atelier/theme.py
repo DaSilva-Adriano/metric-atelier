@@ -262,6 +262,8 @@ html, body, #app {
 }
 .q-table--dense td, .q-table--dense th { padding: 6px 10px !important; }
 .ma-num { font-variant-numeric: tabular-nums lining-nums; text-align: right; }
+.ma-fail { color: var(--ma-danger) !important; font-weight: 600; }
+.ma-chip.fail { background: var(--ma-danger-bg); color: var(--ma-danger); }
 .ma-drop {
   border: 1.5px dashed var(--ma-line-strong);
   border-radius: 12px;

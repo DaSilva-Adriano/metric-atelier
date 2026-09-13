@@ -12,6 +12,7 @@ from metric_atelier.export import (
     runs_to_csv,
     runs_to_markdown,
     stamp_name,
+    write_dataset_json,
     write_figure,
 )
 from metric_atelier.grouping import (
@@ -26,12 +27,20 @@ from metric_atelier.metrics import (
     column_label,
     flag_anomalous_runs,
     format_metric,
+    threshold_status,
 )
-from metric_atelier.models import AppSettings, RunDTO
+from metric_atelier.models import (
+    CHART_ORDER_LABELS,
+    CHART_TYPE_LABELS,
+    UNASSIGNED_VIDEO_ID,
+    AppSettings,
+    RunDTO,
+)
 from metric_atelier.store import get_store
 from metric_atelier.theme import method_color
 from metric_atelier.views.common import (
     app_frame,
+    confirm_dialog,
     format_fps,
     metric_cell,
     open_import_dialog,
@@ -65,6 +74,10 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
     hidden_resolutions: set[str] = set()
     selected: list[str] = []
     chart_type = {"value": settings.default_chart_type}
+    chart_order = {"value": settings.default_chart_order}
+    group_by = {"value": "resolution"}
+    scatter_x = {"value": "psnr_y"}
+    scatter_y = {"value": "vmaf"}
     baseline = {"value": "bicubic"}
     include_hidden_charts = {"on": False}
 
@@ -118,6 +131,12 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
                     force_video_id=video_id, on_done=lambda: _workspace.refresh()
                 ),
             ).props("unelevated")
+            if video_id != UNASSIGNED_VIDEO_ID:
+                ui.button(
+                    "Delete video",
+                    icon="delete",
+                    on_click=lambda: _delete_this_video(),
+                ).props("flat color=negative")
 
     methods = sorted({r.method for r in all_runs if r.method})
     resolutions = sorted(
@@ -131,6 +150,9 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
         ui.button("Hide selected", on_click=lambda: _hide_selected()).props("flat dense").classes(
             "edit-chrome"
         )
+        ui.button("Delete selected", on_click=lambda: _delete_selected()).props(
+            "flat dense color=negative"
+        ).classes("edit-chrome")
         ui.button("Sort by resolution", on_click=lambda: _sort("resolution")).props("outline dense")
         ui.button("Sort by method", on_click=lambda: _sort("method")).props("outline dense")
         ui.button("Sort by VMAF", on_click=lambda: _sort("vmaf")).props("outline dense")
@@ -142,6 +164,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
                     ).on_value_change(lambda e, k=key: _toggle_column(k, e.value))
         ui.button("Export figure", on_click=lambda: _export_figure()).props("outline dense")
         ui.button("Export table", on_click=lambda: _export_table()).props("outline dense")
+        ui.button("Export JSON", on_click=lambda: _export_json()).props("outline dense")
 
     with ui.row().classes("gap-2 flex-wrap mb-2"):
         ui.label("Methods").classes("ma-hint self-center")
@@ -199,7 +222,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
                 "method": run.method or "—",
                 "resolution": run.resolution_label,
                 "fps": format_fps(run.fps),
-                "status": _status_label(run, flags),
+                "status": _status_label(run, flags, settings),
                 "notes": "✎" if run.notes else "",
                 "raw": run.raw_name if settings.show_raw_filenames else "",
                 "hidden": run.hidden,
@@ -306,12 +329,13 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
                 lambda e, rid=run_id: store.move_run(rid, e.value) or _workspace.refresh()
             )
             ui.separator()
-            ui.label("Metrics").classes("text-sm uppercase tracking-wide")
+            ui.label("Metrics (read-only)").classes("text-sm uppercase tracking-wide")
             for key, spec in CATALOG.items():
                 value = format_metric(key, run.metric(key), decimals=settings.decimal_places)
+                status = threshold_status(key, run.metric(key), settings.metric_thresholds)
                 with ui.row().classes("w-full justify-between"):
                     ui.label(f"{spec.short_label} {spec.arrow}").classes("ma-meta")
-                    ui.label(value).classes("ma-num")
+                    ui.label(value).classes("ma-num ma-fail" if status == "fail" else "ma-num")
             ui.separator()
             ui.label("Source").classes("text-sm uppercase tracking-wide")
             ui.label(f"CSV: {run.source_csv}").classes("ma-meta")
@@ -329,12 +353,10 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
             extra_flags = flags.get(run.run_id) or []
             for item in extra_flags:
                 ui.label(item).classes("ma-chip warn")
-            with ui.row().classes("mt-4"):
+            with ui.row().classes("mt-4 edit-chrome"):
                 ui.button(
-                    "Soft-delete",
-                    on_click=lambda rid=run_id: (
-                        store.soft_delete_runs([rid]) or _workspace.refresh()
-                    ),
+                    "Delete row",
+                    on_click=lambda rid=str(run_id): _confirm_purge([rid], close=detail),
                 ).props("flat dense color=negative")
             ui.button("Close", on_click=detail.close).props("flat")
         detail.open()
@@ -360,18 +382,49 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
             ui.label(subtitle).classes("ma-meta")
             with ui.row().classes("gap-2 items-end flex-wrap"):
                 ui.select(
-                    {
-                        "small_multiples": "Small multiples",
-                        "grouped_bar": "Grouped bar",
-                        "slope": "Slope / line",
-                        "delta": "Delta vs baseline",
-                        "radar": "Radar (optional)",
-                    },
+                    CHART_TYPE_LABELS,
                     value=chart_type["value"],
                     label="Chart",
-                ).classes("w-56").on_value_change(
+                ).classes("w-64").on_value_change(
                     lambda e: chart_type.update(value=e.value) or _render_charts()
                 )
+                ui.select(
+                    CHART_ORDER_LABELS,
+                    value=chart_order["value"],
+                    label="Order",
+                ).classes("w-56").on_value_change(
+                    lambda e: chart_order.update(value=e.value) or _render_charts()
+                )
+                if chart_type["value"] == "grouped_bar":
+                    ui.select(
+                        {"resolution": "Group by resolution", "method": "Group by method"},
+                        value=group_by["value"],
+                        label="Group by",
+                    ).classes("w-52").on_value_change(
+                        lambda e: group_by.update(value=e.value) or _render_charts()
+                    )
+                if chart_type["value"] == "scatter":
+                    metric_options = {k: CATALOG[k].short_label for k in settings.hero_metrics}
+                    ui.select(
+                        metric_options,
+                        value=scatter_x["value"]
+                        if scatter_x["value"] in metric_options
+                        else settings.hero_metrics[1]
+                        if len(settings.hero_metrics) > 1
+                        else "psnr_y",
+                        label="X metric",
+                    ).classes("w-40").on_value_change(
+                        lambda e: scatter_x.update(value=e.value) or _render_charts()
+                    )
+                    ui.select(
+                        metric_options,
+                        value=scatter_y["value"]
+                        if scatter_y["value"] in metric_options
+                        else settings.hero_metrics[0],
+                        label="Y metric",
+                    ).classes("w-40").on_value_change(
+                        lambda e: scatter_y.update(value=e.value) or _render_charts()
+                    )
                 ui.select(
                     {m: m for m in methods} or {"bicubic": "bicubic"},
                     value=baseline["value"]
@@ -386,17 +439,15 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
                 ).on_value_change(
                     lambda e: include_hidden_charts.update(on=e.value) or _render_charts()
                 )
+            ui.label(
+                "Order applies to the category axis, or to individual bars on ranked/horizontal charts. "
+                "Use table sort plus “Table / custom order” to pin a specific sequence."
+            ).classes("ma-hint")
             if not chart_runs:
                 ui.label("Nothing to plot. Unhide rows or clear filters.").classes("ma-hint")
                 return
-            fig = figure_for_type(
-                chart_type["value"],
-                chart_runs,
-                settings,
-                title=title_in.value or default_chart_title(video),
-                subtitle=subtitle,
-                metrics=settings.hero_metrics,
-                baseline=baseline["value"],
+            fig = _make_figure(
+                chart_runs, title=title_in.value or default_chart_title(video), subtitle=subtitle
             )
             ui.plotly(fig).classes("w-full").style("min-height: 520px")
             with ui.row().classes("gap-2 edit-chrome"):
@@ -415,6 +466,21 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
         ui.download.file(str(path))
         ui.notify(f"Wrote {path.name}", type="positive")
 
+    def _make_figure(chart_runs, *, title: str, subtitle: str):
+        return figure_for_type(
+            chart_type["value"],
+            chart_runs,
+            settings,
+            title=title,
+            subtitle=subtitle,
+            metrics=settings.hero_metrics,
+            baseline=baseline["value"],
+            order=chart_order["value"],
+            group_by=group_by["value"],
+            scatter_x=scatter_x["value"],
+            scatter_y=scatter_y["value"],
+        )
+
     def _export_figure() -> None:
         chart_runs = visible_runs(
             all_runs,
@@ -422,14 +488,10 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
             hidden_methods=hidden_methods,
             hidden_resolutions=hidden_resolutions,
         )
-        fig = figure_for_type(
-            chart_type["value"],
+        fig = _make_figure(
             chart_runs,
-            settings,
             title=video.chart_title or default_chart_title(video),
             subtitle=auto_subtitle(chart_runs, video, settings),
-            metrics=settings.hero_metrics,
-            baseline=baseline["value"],
         )
         _save_fig(fig, "png")
 
@@ -442,17 +504,74 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
         ui.download.file(str(path))
         ui.notify("Exported CSV and Markdown table.", type="positive")
 
-    def _hide_selected() -> None:
+    def _export_json() -> None:
+        payload = store.export_dataset(video_id)
+        path = export_dir() / stamp_name(video.display_name.replace(" ", "_"), "json")
+        write_dataset_json(payload, path)
+        ui.download.file(str(path))
+        ui.notify(
+            "Exported JSON with method and resolution as fields (not parsed from names).",
+            type="positive",
+        )
+
+    def _selected_ids() -> list[str]:
         table = table_ref.get("table")
         ids = list(selected)
         if table is not None:
             ids = [row.get("run_id") for row in (table.selected or []) if row.get("run_id")]
-        ids = [rid for rid in ids if rid]
+        return [rid for rid in ids if rid]
+
+    def _hide_selected() -> None:
+        ids = _selected_ids()
         if not ids:
             ui.notify("Select one or more rows first.", type="warning")
             return
         store.set_hidden(ids, True)
         _workspace.refresh()
+
+    def _delete_selected() -> None:
+        ids = _selected_ids()
+        if not ids:
+            ui.notify("Select one or more rows first.", type="warning")
+            return
+        _confirm_purge(ids)
+
+    def _confirm_purge(ids: list[str], close=None) -> None:
+        n = len(ids)
+        label = "this row" if n == 1 else f"{n} rows"
+
+        def do_purge() -> None:
+            if close is not None:
+                close.close()
+            removed = store.purge_runs(ids)
+            ui.notify(
+                f"Deleted {removed} run"
+                f"{'' if removed == 1 else 's'}. Original CSVs were not touched."
+            )
+            _workspace.refresh()
+
+        confirm_dialog(
+            f"Delete {label}?",
+            "This permanently removes the run from Metric Atelier. Metric values cannot be edited; "
+            "delete is the only change to imported rows. Original CSV files on disk are not modified.",
+            on_confirm=do_purge,
+        )
+
+    def _delete_this_video() -> None:
+        def do_delete() -> None:
+            n = store.delete_video(video_id)
+            ui.notify(
+                f"Deleted {video.display_name} ({n} run"
+                f"{'' if n == 1 else 's'}). Original CSVs were not touched."
+            )
+            ui.navigate.to("/")
+
+        confirm_dialog(
+            f"Delete “{video.display_name}” from the library?",
+            "This permanently removes the video and all of its runs from Metric Atelier. "
+            "Original CSV files on disk are not modified.",
+            on_confirm=do_delete,
+        )
 
     def _sort(how: str) -> None:
         ordered = sort_runs(
@@ -482,7 +601,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
     refresh_table_and_charts()
 
 
-def _status_label(run: RunDTO, flags: dict[str, list[str]]) -> str:
+def _status_label(run: RunDTO, flags: dict[str, list[str]], settings: AppSettings) -> str:
     parts: list[str] = []
     if run.errors:
         parts.append("error")
@@ -494,4 +613,8 @@ def _status_label(run: RunDTO, flags: dict[str, list[str]]) -> str:
         parts.append("hidden")
     if run.metric("psnr_y") is None and run.metric("vmaf") is None:
         parts.append("incomplete")
+    for key in settings.hero_metrics:
+        if threshold_status(key, run.metric(key), settings.metric_thresholds) == "fail":
+            spec = CATALOG.get(key)
+            parts.append(f"{spec.short_label if spec else key} thresh")
     return " · ".join(parts)

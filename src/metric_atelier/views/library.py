@@ -7,7 +7,12 @@ from nicegui import app, ui
 from metric_atelier.models import UNASSIGNED_VIDEO_ID
 from metric_atelier.store import get_store
 from metric_atelier.theme import method_color
-from metric_atelier.views.common import app_frame, load_samples_into_store, open_import_dialog
+from metric_atelier.views.common import (
+    app_frame,
+    confirm_dialog,
+    load_samples_into_store,
+    open_import_dialog,
+)
 
 
 @ui.page("/")
@@ -161,6 +166,11 @@ def _video_card(video, highlight, settings) -> None:
                         icon="keyboard_arrow_down",
                         on_click=lambda v=video: _nudge(v.video_id, 1),
                     ).props("flat dense round")
+                    if not video.is_unassigned:
+                        ui.button(
+                            icon="delete",
+                            on_click=lambda v=video: _confirm_delete_video(v),
+                        ).props("flat dense round color=negative")
         with ui.row().classes("gap-1 mt-2 flex-wrap"):
             for method in video.methods:
                 ui.label(method).classes("ma-chip swatch").style(
@@ -168,6 +178,23 @@ def _video_card(video, highlight, settings) -> None:
                 )
             for t in video.tags:
                 ui.label(t).classes("ma-chip quiet")
+
+
+def _confirm_delete_video(video) -> None:
+    def do_delete() -> None:
+        n = get_store().delete_video(video.video_id)
+        ui.notify(
+            f"Deleted {video.display_name} ({n} run"
+            f"{'' if n == 1 else 's'}). Original CSVs were not touched."
+        )
+        ui.navigate.reload()
+
+    confirm_dialog(
+        f"Delete “{video.display_name}” from the library?",
+        "This permanently removes the video and all of its runs from Metric Atelier. "
+        "Original CSV files on disk are not modified.",
+        on_confirm=do_delete,
+    )
 
 
 def _nudge(video_id: str, delta: int) -> None:

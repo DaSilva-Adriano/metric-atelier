@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import plotly.graph_objects as go
 
@@ -115,3 +117,10 @@ def runs_to_markdown(
             cells.append(format_metric(key, run.metric(key), decimals=settings.decimal_places))
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
+
+
+def write_dataset_json(payload: dict[str, Any], dest: Path) -> Path:
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return dest
