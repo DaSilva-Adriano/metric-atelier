@@ -60,6 +60,15 @@ def _display_panel(store, settings: AppSettings) -> None:
     ui.switch("Show raw filenames in tables", value=settings.show_raw_filenames).on_value_change(
         lambda e: _save(store, show_raw_filenames=bool(e.value))
     )
+    ui.switch(
+        "Show full method names",
+        value=settings.show_full_method_name,
+    ).on_value_change(lambda e: _save(store, show_full_method_name=bool(e.value)))
+    ui.label(
+        "Off: registered names like ANIMEJANAI_BAL stay whole, but an extra tail "
+        "(ANIMEJANAI_BAL_V3) is hidden. Unregistered xxxxx_yyyyy uses only the first part. "
+        "On: the full method token is shown. JSON export uses the current display name."
+    ).classes("ma-hint")
     ui.select({"en": "English"}, value=settings.language, label="Label language").classes("w-48")
     ui.separator()
     ui.label("Hero metrics").classes("text-sm uppercase tracking-wide")

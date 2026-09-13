@@ -44,6 +44,9 @@ DEFAULT_METHOD_ORDER: tuple[str, ...] = (
     "basicvsr",
     "ia",
     "native",
+    "animejanai_bal",
+    "fsrcnnx8",
+    "fsrcnnx16",
 )
 
 CHART_TYPE_LABELS: dict[str, str] = {
@@ -103,6 +106,9 @@ class AppSettings(BaseModel):
             "basicvsr": "BasicVSR",
             "ia": "IA",
             "native": "Native",
+            "animejanai_bal": "ANIMEJANAI_BAL",
+            "fsrcnnx8": "FSRCNNX8",
+            "fsrcnnx16": "FSRCNNX16",
         }
     )
     extra_method_aliases: dict[str, str] = Field(default_factory=dict)
@@ -112,6 +118,7 @@ class AppSettings(BaseModel):
     method_order: list[str] = Field(default_factory=lambda: list(DEFAULT_METHOD_ORDER))
     metric_thresholds: dict[str, float] = Field(default_factory=dict)
     show_raw_filenames: bool = False
+    show_full_method_name: bool = False
     language: str = "en"
 
     reimport_mode: ReimportMode = "skip"

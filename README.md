@@ -62,8 +62,11 @@ The parser does not assume a single pattern:
 
 - **Pattern A** — prefix + CamelCase title + source `WxH` / fps / yuv / bits + target `720p-60fps-vsr`
 - **Pattern B** — `v-beauty-360p-24fps-bicubic`
+- Known methods include bicubic, lanczos, vsr, **ANIMEJANAI_BAL**, **FSRCNNX8**, **FSRCNNX16**, …
+- A registered name with `_` (ANIMEJANAI_BAL) is the full display name. An extra unregistered tail (`ANIMEJANAI_BAL_V3`) is hidden unless Settings → Display → **Show full method names** is on. Unregistered `xxxxx_yyyyy` uses the first part as the label unless that toggle is on.
 - Unknown methods stay as the raw token (`splatting`, …)
 - Names that have no title land in **Unassigned** so you can move them
+- JSON export `name` / `method` follow the current display name (`method_key` is the canonical id)
 
 Re-import of the same file is deduplicated (`run_id` = hash of file content + row index + distorted name). Settings → Import chooses **skip** or **refresh metrics** (notes, names, hidden, and order are never clobbered).
 

@@ -12,7 +12,12 @@ from typing import Any
 from sqlalchemy import func
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from metric_atelier.grouping import fill_reference_from_parsed, reference_label
+from metric_atelier.grouping import (
+    fill_reference_from_parsed,
+    friendly_run_name,
+    method_display_label,
+    reference_label,
+)
 from metric_atelier.ingest import (
     CsvSource,
     ImportPreview,
@@ -733,7 +738,7 @@ class Store:
                     },
                     "chart_title": video.chart_title,
                     "chart_caption": video.chart_caption,
-                    "runs": [_run_to_dataset(run) for run in runs],
+                    "runs": [_run_to_dataset(run, settings) for run in runs],
                 }
             )
         return {
@@ -747,6 +752,7 @@ class Store:
                 "method_order": list(settings.method_order),
                 "resolution_order": list(settings.resolution_order),
                 "metric_thresholds": dict(settings.metric_thresholds),
+                "show_full_method_name": settings.show_full_method_name,
             },
             "videos": payload_videos,
         }
@@ -877,7 +883,7 @@ def _json_number(value: float | None) -> float | None:
     return number
 
 
-def _run_to_dataset(run: RunDTO) -> dict[str, Any]:
+def _run_to_dataset(run: RunDTO, settings: AppSettings) -> dict[str, Any]:
     metrics = {key: _json_number(value) for key, value in run.metrics_dict().items()}
     metrics = {key: value for key, value in metrics.items() if value is not None}
     extra = {}
@@ -888,10 +894,13 @@ def _run_to_dataset(run: RunDTO) -> dict[str, Any]:
                 extra[key] = number
         elif isinstance(value, (str, bool)) or value is None:
             extra[key] = value
+    displayed = method_display_label(run.method, settings, method_raw=run.method_raw)
     return {
         "run_id": run.run_id,
         "video_id": run.video_id,
-        "method": run.method,
+        "name": friendly_run_name(run, settings),
+        "method": displayed,
+        "method_key": run.method,
         "method_raw": run.method_raw,
         "method_known": run.method_known,
         "resolution": run.resolution_label,

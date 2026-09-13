@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metric_atelier.grouping import method_display_label
 from metric_atelier.ingest import (
     IdentityRule,
     ParserContext,
@@ -7,7 +8,7 @@ from metric_atelier.ingest import (
     slug_video_id,
     title_to_display,
 )
-from metric_atelier.models import UNASSIGNED_VIDEO_ID
+from metric_atelier.models import UNASSIGNED_VIDEO_ID, AppSettings
 
 
 def test_pattern_a_karting_time() -> None:
@@ -64,6 +65,57 @@ def test_karting_time_slug_stable() -> None:
     a = parse_filename("s-KartingTime_3840x2160_60fps_yuv444_16bits_70-720p-60fps-vsr")
     b = parse_filename("v-karting_time-1080p-60fps-bicubic")
     assert a.video_id == b.video_id == "kartingtime"
+
+
+def test_animejanai_bal_is_registered_full_name() -> None:
+    parsed = parse_filename("v-clip-1080p-24fps-ANIMEJANAI_BAL")
+    assert parsed.method == "animejanai_bal"
+    assert parsed.method_known is True
+    assert parsed.method_raw == "animejanai_bal"
+    settings = AppSettings()
+    assert method_display_label(parsed.method, settings, method_raw=parsed.method_raw) == (
+        "ANIMEJANAI_BAL"
+    )
+
+
+def test_unregistered_suffix_hidden_unless_full_name_toggle() -> None:
+    parsed = parse_filename("v-clip-1080p-24fps-ANIMEJANAI_BAL_V3")
+    assert parsed.method == "animejanai_bal"
+    assert parsed.method_raw.lower() == "animejanai_bal_v3"
+    assert parsed.method_raw.endswith("V3")
+    assert parsed.method_known is True
+    hidden = AppSettings(show_full_method_name=False)
+    shown = AppSettings(show_full_method_name=True)
+    assert (
+        method_display_label(parsed.method, hidden, method_raw=parsed.method_raw)
+        == "ANIMEJANAI_BAL"
+    )
+    assert (
+        method_display_label(parsed.method, shown, method_raw=parsed.method_raw)
+        == "ANIMEJANAI_BAL_V3"
+    )
+
+
+def test_fsrcnnx_methods() -> None:
+    eight = parse_filename("v-clip-720p-24fps-FSRCNNX8")
+    sixteen = parse_filename("v-clip-720p-24fps-FSRCNNX16")
+    assert eight.method == "fsrcnnx8"
+    assert sixteen.method == "fsrcnnx16"
+    settings = AppSettings()
+    assert method_display_label(eight.method, settings, method_raw=eight.method_raw) == "FSRCNNX8"
+    assert (
+        method_display_label(sixteen.method, settings, method_raw=sixteen.method_raw) == "FSRCNNX16"
+    )
+
+
+def test_unregistered_underscore_uses_first_part() -> None:
+    parsed = parse_filename("v-clip-720p-24fps-foo_bar")
+    assert parsed.method == "foo_bar"
+    assert parsed.method_known is False
+    hidden = AppSettings(show_full_method_name=False)
+    shown = AppSettings(show_full_method_name=True)
+    assert method_display_label(parsed.method, hidden, method_raw=parsed.method_raw) == "foo"
+    assert method_display_label(parsed.method, shown, method_raw=parsed.method_raw) == "foo_bar"
 
 
 def test_unknown_method_kept_as_raw_token() -> None:

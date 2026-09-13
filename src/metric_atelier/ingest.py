@@ -39,6 +39,11 @@ KNOWN_METHODS: dict[str, str] = {
     "none": "native",
     "native": "native",
     "raw": "native",
+    "animejanai_bal": "animejanai_bal",
+    "fsrcnnx8": "fsrcnnx8",
+    "fsrcnnx_8": "fsrcnnx8",
+    "fsrcnnx16": "fsrcnnx16",
+    "fsrcnnx_16": "fsrcnnx16",
 }
 
 RESOLUTION_LABELS: dict[str, str] = {
@@ -265,6 +270,49 @@ def _coalesce_method_phrases(tokens: list[str], methods: dict[str, str]) -> list
     return out
 
 
+def _pick_method(
+    spec_tokens: list[_Token], methods: dict[str, str]
+) -> tuple[str | None, str | None, bool, set[int]]:
+    """Return canonical method, raw token (with suffix), known flag, consumed spec indices."""
+    known = set(methods.values())
+    method_indices = [i for i, tok in enumerate(spec_tokens) if tok.kind == "method"]
+    consumed: set[int] = set()
+    if method_indices:
+        last_i = method_indices[-1]
+        method = str(spec_tokens[last_i].value)
+        method_raw = str(spec_tokens[last_i].raw).lower()
+        j = last_i + 1
+        extra: list[str] = []
+        while j < len(spec_tokens) and spec_tokens[j].kind == "name":
+            extra.append(str(spec_tokens[j].raw))
+            consumed.add(j)
+            j += 1
+        if extra:
+            method_raw = method_raw + "_" + "_".join(extra)
+        return method, method_raw, method in known, consumed
+
+    trailing: list[int] = []
+    for index in range(len(spec_tokens) - 1, -1, -1):
+        if spec_tokens[index].kind == "name":
+            trailing.append(index)
+        else:
+            break
+    trailing.reverse()
+    if not trailing:
+        return None, None, False, consumed
+    method_raw = "_".join(str(spec_tokens[i].raw) for i in trailing)
+    consumed.update(trailing)
+    raw_low = method_raw.lower()
+    registered = None
+    for key in sorted(known, key=len, reverse=True):
+        if raw_low == key or raw_low.startswith(key + "_"):
+            registered = key
+            break
+    if registered:
+        return registered, method_raw, True, consumed
+    return raw_low, method_raw, raw_low in known, consumed
+
+
 def _classify(token: str, methods: dict[str, str]) -> _Token:
     low = token.lower()
     if low in methods:
@@ -363,17 +411,12 @@ def parse_filename(raw: str, ctx: ParserContext | None = None) -> ParsedFilename
     title_tokens = [tok.value for tok in classified[:first_spec] if tok.kind == "name"]
     spec_tokens = classified[first_spec:]
 
-    method_values = [tok.value for tok in spec_tokens if tok.kind == "method"]
-    name_in_specs = [tok.value for tok in spec_tokens if tok.kind == "name"]
-    method: str | None = method_values[-1] if method_values else None
-    method_raw: str | None = None
-    method_known = method is not None and method in set(methods.values())
-    if method is None and name_in_specs:
-        method_raw = str(name_in_specs.pop()).lower()
-        method = method_raw
-        method_known = method in set(methods.values())
-    elif method is not None:
-        method_raw = method
+    method, method_raw, method_known, consumed_method = _pick_method(spec_tokens, methods)
+    name_in_specs = [
+        tok.value
+        for i, tok in enumerate(spec_tokens)
+        if tok.kind == "name" and i not in consumed_method
+    ]
 
     res_labels = [tok.value for tok in spec_tokens if tok.kind == "res_label"]
     wxhs = [tok.value for tok in spec_tokens if tok.kind == "wxh"]

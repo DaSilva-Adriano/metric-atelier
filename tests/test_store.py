@@ -213,9 +213,11 @@ def test_dataset_json_uses_method_and_resolution_fields(store: Store, samples_di
     video = payload["videos"][0]
     assert video["video_id"] == "beauty"
     assert video["runs"]
-    vsr = next(run for run in video["runs"] if run["method"] == "vsr")
-    assert vsr["method"] == "vsr"
+    vsr = next(run for run in video["runs"] if run.get("method_key") == "vsr")
+    assert vsr["method"] == "VSR"
+    assert vsr["method_key"] == "vsr"
     assert vsr["method_raw"]
+    assert vsr["name"]
     assert vsr["resolution"] in {"360p", "480p", "1080p", "2160p"}
     assert isinstance(vsr["metrics"], dict)
     assert "vmaf" in vsr["metrics"] or "psnr_y" in vsr["metrics"]
@@ -225,3 +227,25 @@ def test_dataset_json_uses_method_and_resolution_fields(store: Store, samples_di
         assert "metrics" in run
         assert isinstance(run["metrics"], dict)
         assert run["raw_name"], "raw_name is a label only; method/resolution are the fields"
+
+
+def test_dataset_json_method_follows_display_toggle(store: Store, tmp_path: Path) -> None:
+    csv_path = tmp_path / "clip.csv"
+    csv_path.write_text(
+        "distorted,vmaf,psnr_y\n"
+        "v-clip-1080p-24fps-ANIMEJANAI_BAL_V3,80.0,32.0\n"
+        "v-clip-1080p-24fps-FSRCNNX8,70.0,30.0\n",
+        encoding="utf-8",
+    )
+    store.commit_sources([_source(csv_path)])
+    store.update_settings(show_full_method_name=False)
+    hidden = store.export_dataset("clip")
+    methods = {row["method_key"]: row for row in hidden["videos"][0]["runs"]}
+    assert methods["animejanai_bal"]["method"] == "ANIMEJANAI_BAL"
+    assert methods["animejanai_bal"]["name"].startswith("ANIMEJANAI_BAL")
+    assert methods["fsrcnnx8"]["method"] == "FSRCNNX8"
+    store.update_settings(show_full_method_name=True)
+    shown = store.export_dataset("clip")
+    full = next(row for row in shown["videos"][0]["runs"] if row["method_key"] == "animejanai_bal")
+    assert full["method"] == "ANIMEJANAI_BAL_V3"
+    assert "ANIMEJANAI_BAL_V3" in full["name"]

@@ -18,6 +18,9 @@ OKABE_ITO = {
     "basicvsr": "#009E73",
     "ia": "#CC79A7",
     "native": "#7A746C",
+    "animejanai_bal": "#6B4C9A",
+    "fsrcnnx8": "#B85C38",
+    "fsrcnnx16": "#2A6F97",
     "unknown": "#9A9186",
 }
 
@@ -327,9 +330,15 @@ def theme_colors(settings: AppSettings) -> ThemeColors:
 
 def method_color(method: str | None, settings: AppSettings) -> str:
     key = (method or "unknown").lower()
-    if key in settings.method_colors:
-        return settings.method_colors[key]
-    return OKABE_ITO.get(key, OKABE_ITO["unknown"])
+    parts = key.split("_")
+    while parts:
+        stem = "_".join(parts)
+        if stem in settings.method_colors:
+            return settings.method_colors[stem]
+        if stem in OKABE_ITO:
+            return OKABE_ITO[stem]
+        parts.pop()
+    return OKABE_ITO["unknown"]
 
 
 def resolution_color(label: str) -> str:

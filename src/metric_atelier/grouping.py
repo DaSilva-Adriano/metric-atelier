@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
-from metric_atelier.ingest import ParsedFilename, title_to_display
+from metric_atelier.ingest import KNOWN_METHODS, ParsedFilename, title_to_display
 from metric_atelier.models import UNASSIGNED_VIDEO_ID, AppSettings, RunDTO, SourceVideo
 
 
@@ -12,21 +13,100 @@ def is_unassigned(video_id: str) -> bool:
     return video_id == UNASSIGNED_VIDEO_ID
 
 
+def known_method_stems(settings: AppSettings | None = None) -> set[str]:
+    stems = {key.lower() for key in KNOWN_METHODS}
+    stems.update(value.lower() for value in KNOWN_METHODS.values())
+    if settings is not None:
+        stems.update(key.lower() for key in settings.method_order)
+        stems.update(key.lower() for key in settings.method_display_aliases)
+        stems.update(key.lower() for key in (settings.extra_method_aliases or {}))
+        stems.update(str(value).lower() for value in (settings.extra_method_aliases or {}).values())
+    stems.discard("")
+    return stems
+
+
+def registered_method_stem(
+    method: str | None,
+    method_raw: str | None,
+    settings: AppSettings | None = None,
+) -> str | None:
+    key = (method or "").lower()
+    raw = (method_raw or method or "").lower()
+    candidates = [
+        stem
+        for stem in known_method_stems(settings)
+        if key == stem or raw == stem or raw.startswith(stem + "_")
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=len)
+
+
+def method_display_label(
+    method: str | None,
+    settings: AppSettings,
+    *,
+    method_raw: str | None = None,
+) -> str:
+    """Label shown in the UI.
+
+    Registered names that contain ``_`` (e.g. ANIMEJANAI_BAL) are the full display
+    name. An extra unregistered tail (ANIMEJANAI_BAL_V3) is hidden unless
+    ``show_full_method_name`` is on. Unregistered ``xxxxx_yyyyy`` uses the first
+    part as the assumed display name unless the full-name toggle is on.
+    """
+    if not method and not method_raw:
+        return "unknown"
+    raw = (method_raw or method or "").strip()
+    aliases = settings.method_display_aliases
+    stem = registered_method_stem(method, method_raw, settings)
+
+    def aliased(token: str) -> str:
+        return aliases.get(token.lower(), token)
+
+    if stem:
+        base = aliased(stem)
+        if not settings.show_full_method_name:
+            return base
+        extra = ""
+        raw_low = raw.lower()
+        if raw_low.startswith(stem + "_"):
+            extra = raw[len(stem) + 1 :]
+        elif raw_low != stem and raw_low.startswith(stem):
+            extra = raw[len(stem) :].lstrip("_-")
+        return f"{base}_{extra}" if extra else base
+
+    parts = [part for part in re.split(r"_+", raw) if part]
+    if not parts:
+        return aliased(raw or "unknown")
+    if settings.show_full_method_name:
+        return aliased(parts[0]) + ("_" + "_".join(parts[1:]) if len(parts) > 1 else "")
+    return aliased(parts[0])
+
+
+def method_series_key(run: RunDTO, settings: AppSettings) -> str:
+    if settings.show_full_method_name:
+        return (run.method_raw or run.method or "unknown").lower()
+    return (run.method or "unknown").lower()
+
+
 def friendly_run_name(run: RunDTO, settings: AppSettings) -> str:
     if run.display_name:
         return run.display_name
     method_key = run.method or "unknown"
-    method = settings.method_display_aliases.get(method_key, method_key)
+    method = method_display_label(run.method, settings, method_raw=run.method_raw)
     res = run.resolution_label or "unknown"
     if method_key in {"unknown", None} and res == "unknown":
         return run.raw_name
     return f"{method} {res}"
 
 
-def method_short_label(method: str | None, settings: AppSettings) -> str:
-    if not method:
+def method_short_label(
+    method: str | None, settings: AppSettings, *, method_raw: str | None = None
+) -> str:
+    if not method and not method_raw:
         return "unknown"
-    return settings.method_display_aliases.get(method, method)
+    return method_display_label(method, settings, method_raw=method_raw or method)
 
 
 def resolution_sort_key(label: str, order: Sequence[str]) -> tuple[int, str]:

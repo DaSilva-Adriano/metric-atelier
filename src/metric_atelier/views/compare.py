@@ -6,6 +6,7 @@ from nicegui import ui
 
 from metric_atelier.charts import build_compare_board, visible_runs
 from metric_atelier.export import export_dir, stamp_name, write_figure
+from metric_atelier.grouping import method_series_key
 from metric_atelier.metrics import column_label, format_metric
 from metric_atelier.models import UNASSIGNED_VIDEO_ID
 from metric_atelier.store import get_store
@@ -82,7 +83,7 @@ def compare_page() -> None:
                 combos: list[tuple[str, str]] = []
                 for runs in series.values():
                     for run in runs:
-                        pair = (run.method or "unknown", run.resolution_label)
+                        pair = (method_series_key(run, settings), run.resolution_label)
                         if pair not in combos:
                             combos.append(pair)
                 combos.sort(
@@ -101,7 +102,8 @@ def compare_page() -> None:
                             (
                                 r
                                 for r in runs
-                                if (r.method or "unknown") == method and r.resolution_label == res
+                                if method_series_key(r, settings) == method
+                                and r.resolution_label == res
                             ),
                             None,
                         )

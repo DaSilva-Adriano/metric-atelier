@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from nicegui import app, ui
 
+from metric_atelier.grouping import method_short_label
 from metric_atelier.models import UNASSIGNED_VIDEO_ID
 from metric_atelier.store import get_store
 from metric_atelier.theme import method_color
@@ -173,7 +174,7 @@ def _video_card(video, highlight, settings) -> None:
                         ).props("flat dense round color=negative")
         with ui.row().classes("gap-1 mt-2 flex-wrap"):
             for method in video.methods:
-                ui.label(method).classes("ma-chip swatch").style(
+                ui.label(method_short_label(method, settings)).classes("ma-chip swatch").style(
                     f"--swatch: {method_color(method, settings)}"
                 )
             for t in video.tags:

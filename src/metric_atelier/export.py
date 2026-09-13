@@ -10,7 +10,7 @@ from typing import Any
 
 import plotly.graph_objects as go
 
-from metric_atelier.grouping import friendly_run_name
+from metric_atelier.grouping import friendly_run_name, method_display_label
 from metric_atelier.metrics import CATALOG, format_metric
 from metric_atelier.models import AppSettings, RunDTO
 from metric_atelier.store import get_store
@@ -76,7 +76,7 @@ def runs_to_csv(
         for run in runs:
             row = {
                 "name": friendly_run_name(run, settings),
-                "method": run.method or "",
+                "method": method_display_label(run.method, settings, method_raw=run.method_raw),
                 "resolution": run.resolution_label,
                 "fps": ""
                 if run.fps is None
@@ -109,7 +109,7 @@ def runs_to_markdown(
         fps = "" if run.fps is None else str(int(run.fps) if run.fps == int(run.fps) else run.fps)
         cells = [
             friendly_run_name(run, settings),
-            run.method or "—",
+            method_display_label(run.method, settings, method_raw=run.method_raw) or "—",
             run.resolution_label,
             fps or "—",
         ]

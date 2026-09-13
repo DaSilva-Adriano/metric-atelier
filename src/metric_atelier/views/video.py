@@ -18,6 +18,8 @@ from metric_atelier.export import (
 from metric_atelier.grouping import (
     default_chart_title,
     friendly_run_name,
+    method_series_key,
+    method_short_label,
     reference_label,
     sort_runs,
 )
@@ -138,7 +140,13 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
                     on_click=lambda: _delete_this_video(),
                 ).props("flat color=negative")
 
-    methods = sorted({r.method for r in all_runs if r.method})
+    methods: list[str] = []
+    seen_methods: set[str] = set()
+    for run in all_runs:
+        key = method_series_key(run, settings)
+        if key != "unknown" and key not in seen_methods:
+            seen_methods.add(key)
+            methods.append(key)
     resolutions = sorted(
         {r.resolution_label for r in all_runs},
         key=lambda x: settings.resolution_order.index(x) if x in settings.resolution_order else 99,
@@ -170,7 +178,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
         ui.label("Methods").classes("ma-hint self-center")
         for method in methods:
             ui.chip(
-                method,
+                method_short_label(method, settings),
                 selectable=True,
                 selected=True,
                 color=None,
@@ -205,6 +213,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
             include_hidden=include_hidden["on"],
             hidden_methods=hidden_methods,
             hidden_resolutions=hidden_resolutions,
+            settings=settings,
         )
 
     def refresh_table_and_charts() -> None:
@@ -219,7 +228,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
             row = {
                 "run_id": run.run_id,
                 "name": friendly_run_name(run, settings),
-                "method": run.method or "—",
+                "method": method_short_label(run.method, settings, method_raw=run.method_raw),
                 "resolution": run.resolution_label,
                 "fps": format_fps(run.fps),
                 "status": _status_label(run, flags, settings),
@@ -368,6 +377,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
             include_hidden=include_hidden_charts["on"],
             hidden_methods=hidden_methods,
             hidden_resolutions=hidden_resolutions,
+            settings=settings,
         )
         with chart_host:
             ui.label("Figures").classes("ma-kicker")
@@ -426,7 +436,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
                         lambda e: scatter_y.update(value=e.value) or _render_charts()
                     )
                 ui.select(
-                    {m: m for m in methods} or {"bicubic": "bicubic"},
+                    {m: method_short_label(m, settings) for m in methods} or {"bicubic": "Bicubic"},
                     value=baseline["value"]
                     if baseline["value"] in methods
                     else (methods[0] if methods else "bicubic"),
@@ -487,6 +497,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
             include_hidden=include_hidden_charts["on"],
             hidden_methods=hidden_methods,
             hidden_resolutions=hidden_resolutions,
+            settings=settings,
         )
         fig = _make_figure(
             chart_runs,

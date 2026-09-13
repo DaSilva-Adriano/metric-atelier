@@ -9,6 +9,7 @@ from plotly.subplots import make_subplots
 
 from metric_atelier.grouping import (
     friendly_run_name,
+    method_series_key,
     method_short_label,
     reference_label,
     sort_runs,
@@ -24,6 +25,7 @@ def visible_runs(
     include_hidden: bool,
     hidden_methods: set[str] | None = None,
     hidden_resolutions: set[str] | None = None,
+    settings: AppSettings | None = None,
 ) -> list[RunDTO]:
     hidden_methods = hidden_methods or set()
     hidden_resolutions = hidden_resolutions or set()
@@ -33,7 +35,10 @@ def visible_runs(
             continue
         if run.hidden and not include_hidden:
             continue
-        if run.method and run.method in hidden_methods:
+        method_key = (
+            method_series_key(run, settings) if settings is not None else (run.method or "unknown")
+        )
+        if hidden_methods and method_key in hidden_methods:
             continue
         if run.resolution_label in hidden_resolutions:
             continue
@@ -46,7 +51,16 @@ def auto_subtitle(
     video: SourceVideo | None = None,
     settings: AppSettings | None = None,
 ) -> str:
-    methods = sorted({r.method for r in runs if r.method})
+    if settings is not None:
+        methods = sorted(
+            {
+                method_short_label(r.method, settings, method_raw=r.method_raw)
+                for r in runs
+                if r.method
+            }
+        )
+    else:
+        methods = sorted({r.method for r in runs if r.method})
     present = {r.resolution_label for r in runs if r.resolution_label != "unknown"}
     order = (
         list(settings.resolution_order)
@@ -257,6 +271,12 @@ def _ordered_resolutions(
     return ordered + extra
 
 
+def _method_key(run: RunDTO, settings: AppSettings | None) -> str:
+    if settings is None:
+        return run.method or "unknown"
+    return method_series_key(run, settings)
+
+
 def _ordered_methods(
     runs: Sequence[RunDTO],
     settings: AppSettings | None = None,
@@ -264,24 +284,31 @@ def _ordered_methods(
     how: str = "method",
     metric: str | None = None,
 ) -> list[str]:
-    present = {run.method or "unknown" for run in runs}
+    present = {_method_key(run, settings) for run in runs}
     if how in {"value_asc", "value_desc"} and metric:
         return _sort_labels_by_value(
             list(present),
             runs,
             metric,
             how,
-            lambda run, label: (run.method or "unknown") == label,
+            lambda run, label: _method_key(run, settings) == label,
         )
     if how == "table":
         seen: list[str] = []
         for run in sorted(runs, key=lambda item: (item.sort_index, item.raw_name)):
-            method = run.method or "unknown"
+            method = _method_key(run, settings)
             if method not in seen:
                 seen.append(method)
         return seen
     preferred = list(settings.method_order) if settings is not None else list(DEFAULT_METHOD_ORDER)
-    ordered = [method for method in preferred if method in present]
+    ordered: list[str] = []
+    for stem in preferred:
+        stem_l = stem.lower()
+        matches = [key for key in present if key == stem_l or key.startswith(stem_l + "_")]
+        matches.sort()
+        for key in matches:
+            if key not in ordered:
+                ordered.append(key)
     rest = sorted(present - set(ordered))
     return ordered + rest
 
@@ -382,7 +409,7 @@ def build_small_multiples(
                 match = [
                     r
                     for r in runs
-                    if (r.method or "unknown") == method and r.resolution_label == res
+                    if _method_key(r, settings) == method and r.resolution_label == res
                 ]
                 value = match[0].metric(key) if match else None
                 xs.append(res)
@@ -461,7 +488,7 @@ def build_grouped_bar(
                 match = [
                     r
                     for r in runs
-                    if (r.method or "unknown") == method and r.resolution_label == res
+                    if _method_key(r, settings) == method and r.resolution_label == res
                 ]
                 value = match[0].metric(metric) if match else None
                 xs.append(method_short_label(method, settings))
@@ -486,7 +513,7 @@ def build_grouped_bar(
                 match = [
                     r
                     for r in runs
-                    if (r.method or "unknown") == method and r.resolution_label == res
+                    if _method_key(r, settings) == method and r.resolution_label == res
                 ]
                 value = match[0].metric(metric) if match else None
                 xs.append(res)
@@ -534,7 +561,7 @@ def build_slope(
         xs, ys = [], []
         for res in resolutions:
             match = [
-                r for r in runs if (r.method or "unknown") == method and r.resolution_label == res
+                r for r in runs if _method_key(r, settings) == method and r.resolution_label == res
             ]
             if not match or match[0].metric(metric) is None:
                 continue
@@ -589,7 +616,7 @@ def build_delta(
                 (
                     r
                     for r in runs
-                    if (r.method or "unknown") == baseline_method and r.resolution_label == res
+                    if _method_key(r, settings) == baseline_method and r.resolution_label == res
                 ),
                 None,
             )
@@ -597,7 +624,7 @@ def build_delta(
                 (
                     r
                     for r in runs
-                    if (r.method or "unknown") == method and r.resolution_label == res
+                    if _method_key(r, settings) == method and r.resolution_label == res
                 ),
                 None,
             )
@@ -731,7 +758,7 @@ def build_compare_board(
     combos: list[tuple[str, str]] = []
     for runs in series.values():
         for run in runs:
-            pair = (run.method or "unknown", run.resolution_label)
+            pair = (_method_key(run, settings), run.resolution_label)
             if pair not in combos:
                 combos.append(pair)
     combos.sort(
@@ -748,7 +775,7 @@ def build_compare_board(
         col = index % cols + 1
         for v_i, video_id in enumerate(video_ids):
             runs = series[video_id]
-            lookup = {(r.method or "unknown", r.resolution_label): r for r in runs}
+            lookup = {(_method_key(r, settings), r.resolution_label): r for r in runs}
             ys = []
             for pair in combos:
                 run = lookup.get(pair)
@@ -882,7 +909,7 @@ def build_heatmap(
         row_text: list[str] = []
         for res in resolutions:
             match = [
-                r for r in runs if (r.method or "unknown") == method and r.resolution_label == res
+                r for r in runs if _method_key(r, settings) == method and r.resolution_label == res
             ]
             value = match[0].metric(metric) if match else None
             row_vals.append(value)
@@ -940,7 +967,7 @@ def build_scatter(
 ) -> go.Figure:
     fig = go.Figure()
     for method in _ordered_methods(runs, settings, how="method"):
-        subset = [run for run in runs if (run.method or "unknown") == method]
+        subset = [run for run in runs if _method_key(run, settings) == method]
         if not subset:
             continue
         fig.add_trace(
