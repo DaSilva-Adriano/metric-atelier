@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -733,6 +733,35 @@ def build_radar(
     return fig
 
 
+def aligned_compare_combos(
+    series: Mapping[str, Sequence[RunDTO]],
+    settings: AppSettings,
+) -> list[tuple[str, str]]:
+    """Unique (method_key, resolution) pairs across contents, stable order."""
+    combos: list[tuple[str, str]] = []
+    for runs in series.values():
+        for run in runs:
+            pair = (_method_key(run, settings), run.resolution_label)
+            if pair not in combos:
+                combos.append(pair)
+    combos.sort(
+        key=lambda item: (
+            settings.resolution_order.index(item[1])
+            if item[1] in settings.resolution_order
+            else 99,
+            item[0],
+        )
+    )
+    return combos
+
+
+def compare_run_lookup(
+    runs: Sequence[RunDTO],
+    settings: AppSettings,
+) -> dict[tuple[str, str], RunDTO]:
+    return {(_method_key(run, settings), run.resolution_label): run for run in runs}
+
+
 def build_compare_board(
     series: dict[str, list[RunDTO]],
     metrics: Sequence[str],
@@ -753,23 +782,23 @@ def build_compare_board(
         vertical_spacing=0.14,
         horizontal_spacing=0.08,
     )
-    palette = ["#3D5C4A", "#E69F00", "#56B4E9", "#D55E00", "#0072B2", "#CC79A7"]
+    palette = [
+        "#3D5C4A",
+        "#E69F00",
+        "#56B4E9",
+        "#D55E00",
+        "#0072B2",
+        "#CC79A7",
+        "#009E73",
+        "#6B4C9A",
+        "#B85C38",
+        "#2A6F97",
+        "#7A746C",
+        "#F0E442",
+    ]
     video_ids = list(series.keys())
-    combos: list[tuple[str, str]] = []
-    for runs in series.values():
-        for run in runs:
-            pair = (_method_key(run, settings), run.resolution_label)
-            if pair not in combos:
-                combos.append(pair)
-    combos.sort(
-        key=lambda item: (
-            settings.resolution_order.index(item[1])
-            if item[1] in settings.resolution_order
-            else 99,
-            item[0],
-        )
-    )
-    labels = [f"{m}/{res}" for m, res in combos]
+    combos = aligned_compare_combos(series, settings)
+    labels = [f"{method_short_label(method, settings)}/{res}" for method, res in combos]
     for index, key in enumerate(keys):
         row = index // cols + 1
         col = index % cols + 1
@@ -1006,6 +1035,145 @@ def build_scatter(
     return fig
 
 
+_SINGLE_METRIC_CHARTS = frozenset(
+    {
+        "grouped_bar",
+        "slope",
+        "delta",
+        "ranked_bar",
+        "horizontal_bar",
+        "heatmap",
+    }
+)
+
+
+def _axis_copy(axis) -> dict:
+    if axis is None:
+        return {}
+    data = axis.to_plotly_json() if hasattr(axis, "to_plotly_json") else dict(axis)
+    for key in ("domain", "anchor", "overlaying", "matches", "scaleanchor", "position"):
+        data.pop(key, None)
+    return data
+
+
+def _figure_for_single_metric(
+    chart_type: str,
+    runs: Sequence[RunDTO],
+    metric: str,
+    settings: AppSettings,
+    *,
+    title: str,
+    subtitle: str,
+    baseline: str,
+    order: str,
+    group_by: str,
+) -> go.Figure:
+    if chart_type == "slope":
+        return build_slope(runs, metric, settings, title=title, subtitle=subtitle, order=order)
+    if chart_type == "delta":
+        return build_delta(
+            runs,
+            metric,
+            settings,
+            baseline_method=baseline,
+            title=title,
+            subtitle=subtitle,
+            order=order,
+        )
+    if chart_type == "ranked_bar":
+        return build_ranked_bar(runs, metric, settings, title=title, subtitle=subtitle, order=order)
+    if chart_type == "horizontal_bar":
+        return build_ranked_bar(
+            runs,
+            metric,
+            settings,
+            title=title,
+            subtitle=subtitle,
+            order=order,
+            horizontal=True,
+        )
+    if chart_type == "heatmap":
+        return build_heatmap(runs, metric, settings, title=title, subtitle=subtitle, order=order)
+    return build_grouped_bar(
+        runs,
+        metric,
+        settings,
+        title=title,
+        subtitle=subtitle,
+        group_by=group_by,
+        order=order,
+    )
+
+
+def _build_metric_grid(
+    chart_type: str,
+    runs: Sequence[RunDTO],
+    metrics: Sequence[str],
+    settings: AppSettings,
+    *,
+    title: str,
+    subtitle: str,
+    baseline: str,
+    order: str,
+    group_by: str,
+) -> go.Figure:
+    keys = list(metrics)
+    n = len(keys)
+    cols = 3 if n > 2 else max(n, 1)
+    rows_n = (n + cols - 1) // cols
+    fig = make_subplots(
+        rows=rows_n,
+        cols=cols,
+        subplot_titles=[
+            f"{CATALOG[k].short_label} {CATALOG[k].arrow}" if k in CATALOG else k for k in keys
+        ],
+        vertical_spacing=0.16 if rows_n > 1 else 0.12,
+        horizontal_spacing=0.10,
+    )
+    for index, key in enumerate(keys):
+        row = index // cols + 1
+        col = index % cols + 1
+        single = _figure_for_single_metric(
+            chart_type,
+            runs,
+            key,
+            settings,
+            title="",
+            subtitle="",
+            baseline=baseline,
+            order=order,
+            group_by=group_by,
+        )
+        for trace in single.data:
+            if index > 0:
+                trace.showlegend = False
+            if getattr(trace, "showscale", None) is not None:
+                trace.showscale = index == n - 1
+            fig.add_trace(trace, row=row, col=col)
+        fig.update_xaxes(_axis_copy(single.layout.xaxis), row=row, col=col)
+        fig.update_yaxes(_axis_copy(single.layout.yaxis), row=row, col=col)
+        if chart_type == "horizontal_bar":
+            _add_threshold_line(fig, key, settings, row=row, col=col, orientation="v")
+        elif chart_type not in {"heatmap", "delta"}:
+            _add_threshold_line(fig, key, settings, row=row, col=col)
+    tall = chart_type in {"heatmap", "ranked_bar", "horizontal_bar"}
+    height = (360 if tall else 300) * rows_n + 200
+    caption = direction_caption(keys)
+    if chart_type == "delta":
+        caption = f"Signed delta versus {method_short_label(baseline, settings)}.<br>{caption}"
+    layout = publication_layout(
+        title=title,
+        subtitle=subtitle,
+        settings=settings,
+        height=height,
+        caption=caption,
+    )
+    fig.update_layout(**layout)
+    if chart_type in {"grouped_bar", "delta"}:
+        fig.update_layout(barmode="group")
+    return fig
+
+
 def figure_for_type(
     chart_type: str,
     runs: Sequence[RunDTO],
@@ -1020,48 +1188,44 @@ def figure_for_type(
     scatter_x: str = "psnr_y",
     scatter_y: str = "vmaf",
 ) -> go.Figure:
-    hero = list(metrics) or list(settings.hero_metrics)
-    primary = hero[0] if hero else "vmaf"
-    if chart_type == "grouped_bar":
-        return build_grouped_bar(
+    hero = [key for key in (metrics or settings.hero_metrics) if key in CATALOG]
+    if not hero:
+        hero = list(settings.hero_metrics) or ["vmaf"]
+    primary = hero[0]
+    if chart_type in _SINGLE_METRIC_CHARTS:
+        if len(hero) > 1:
+            return _build_metric_grid(
+                chart_type,
+                runs,
+                hero,
+                settings,
+                title=title,
+                subtitle=subtitle,
+                baseline=baseline,
+                order=order,
+                group_by=group_by,
+            )
+        return _figure_for_single_metric(
+            chart_type,
             runs,
             primary,
             settings,
             title=title,
             subtitle=subtitle,
+            baseline=baseline,
+            order=order,
             group_by=group_by,
-            order=order,
-        )
-    if chart_type == "slope":
-        return build_slope(runs, primary, settings, title=title, subtitle=subtitle, order=order)
-    if chart_type == "delta":
-        return build_delta(
-            runs,
-            primary,
-            settings,
-            baseline_method=baseline,
-            title=title,
-            subtitle=subtitle,
-            order=order,
         )
     if chart_type == "radar":
+        if len(hero) < 3:
+            if len(hero) == 1:
+                return build_ranked_bar(
+                    runs, primary, settings, title=title, subtitle=subtitle, order=order
+                )
+            return build_small_multiples(
+                runs, hero, settings, title=title, subtitle=subtitle, order=order
+            )
         return build_radar(runs, hero, settings, title=title, subtitle=subtitle)
-    if chart_type == "ranked_bar":
-        return build_ranked_bar(
-            runs, primary, settings, title=title, subtitle=subtitle, order=order
-        )
-    if chart_type == "horizontal_bar":
-        return build_ranked_bar(
-            runs,
-            primary,
-            settings,
-            title=title,
-            subtitle=subtitle,
-            order=order,
-            horizontal=True,
-        )
-    if chart_type == "heatmap":
-        return build_heatmap(runs, primary, settings, title=title, subtitle=subtitle, order=order)
     if chart_type == "scatter":
         return build_scatter(
             runs,

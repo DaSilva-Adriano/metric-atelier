@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from metric_atelier.metrics import (
+    ALL_METRICS_KEY,
     CATALOG,
     DEFAULT_HERO_METRICS,
     direction_caption,
     format_metric,
+    metric_choice_options,
+    resolve_metric_choice,
     threshold_status,
 )
 
@@ -27,6 +30,17 @@ def test_direction_caption() -> None:
 def test_format_none() -> None:
     assert format_metric("vmaf", None) == "—"
     assert format_metric("unknown_metric", 1.23456) == "1.235"
+
+
+def test_metric_choice_all_or_specific() -> None:
+    options = metric_choice_options(["vmaf", "psnr_y", "lpips"])
+    assert options[ALL_METRICS_KEY] == "All metrics"
+    assert options["vmaf"] == "VMAF"
+    assert options["psnr_y"] == "PSNR-Y"
+    assert resolve_metric_choice(ALL_METRICS_KEY, ["vmaf", "psnr_y"]) == ["vmaf", "psnr_y"]
+    assert resolve_metric_choice("vmaf", ["vmaf", "psnr_y"]) == ["vmaf"]
+    assert resolve_metric_choice(None, ["vmaf", "psnr_y"]) == ["vmaf", "psnr_y"]
+    assert resolve_metric_choice("missing", ["vmaf", "psnr_y"]) == ["vmaf", "psnr_y"]
 
 
 def test_threshold_status_respects_direction() -> None:

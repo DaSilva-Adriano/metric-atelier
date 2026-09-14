@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import plotly.graph_objects as go
 
-from metric_atelier.grouping import friendly_run_name, method_display_label
+from metric_atelier.charts import aligned_compare_combos, compare_run_lookup
+from metric_atelier.grouping import friendly_run_name, method_display_label, method_short_label
 from metric_atelier.metrics import CATALOG, format_metric
 from metric_atelier.models import AppSettings, RunDTO
 from metric_atelier.store import get_store
@@ -124,3 +125,79 @@ def write_dataset_json(payload: dict[str, Any], dest: Path) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return dest
+
+
+def _json_number(value: float | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+    return number
+
+
+def comparison_payload(
+    series: Mapping[str, Sequence[RunDTO]],
+    settings: AppSettings,
+    *,
+    metrics: Sequence[str],
+    contents: Sequence[Mapping[str, str]],
+) -> dict[str, Any]:
+    """Aligned cross-content comparison. Keys in ``series`` are display names."""
+    keys = [key for key in metrics if key in CATALOG] or list(settings.hero_metrics)
+    combos = aligned_compare_combos(series, settings)
+    lookups = {name: compare_run_lookup(runs, settings) for name, runs in series.items()}
+    name_by_id = {item["video_id"]: item["display_name"] for item in contents}
+    rows: list[dict[str, Any]] = []
+    for method_key, resolution in combos:
+        by_content: dict[str, Any] = {}
+        for item in contents:
+            video_id = item["video_id"]
+            display = item["display_name"]
+            run = lookups.get(display, {}).get((method_key, resolution))
+            if run is None:
+                # series may be keyed by video_id in some callers
+                run = lookups.get(video_id, {}).get((method_key, resolution))
+            if run is None:
+                by_content[video_id] = None
+                continue
+            metric_values = {
+                key: _json_number(run.metric(key))
+                for key in run.metrics_dict()
+                if _json_number(run.metric(key)) is not None
+            }
+            by_content[video_id] = {
+                "run_id": run.run_id,
+                "name": friendly_run_name(run, settings),
+                "method": method_display_label(run.method, settings, method_raw=run.method_raw),
+                "method_key": method_key,
+                "resolution": resolution,
+                "metrics": metric_values,
+            }
+        rows.append(
+            {
+                "method": method_short_label(method_key, settings),
+                "method_key": method_key,
+                "resolution": resolution,
+                "by_content": by_content,
+            }
+        )
+    return {
+        "version": 1,
+        "kind": "metric-atelier-comparison",
+        "exported_at": datetime.now(UTC).isoformat(),
+        "align_on": "method+resolution",
+        "metrics": list(keys),
+        "contents": [
+            {
+                "video_id": item["video_id"],
+                "display_name": item["display_name"],
+            }
+            for item in contents
+        ],
+        "rows": rows,
+        "content_labels": name_by_id,
+    }

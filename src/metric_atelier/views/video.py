@@ -24,11 +24,13 @@ from metric_atelier.grouping import (
     sort_runs,
 )
 from metric_atelier.metrics import (
+    ALL_METRICS_KEY,
     CATALOG,
     SECONDARY_METRICS,
     column_label,
     flag_anomalous_runs,
     format_metric,
+    resolve_metric_choice,
     threshold_status,
 )
 from metric_atelier.models import (
@@ -45,6 +47,7 @@ from metric_atelier.views.common import (
     confirm_dialog,
     format_fps,
     metric_cell,
+    metric_filter_chips,
     open_import_dialog,
 )
 
@@ -80,6 +83,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
     group_by = {"value": "resolution"}
     scatter_x = {"value": "psnr_y"}
     scatter_y = {"value": "vmaf"}
+    chart_metric = {"value": ALL_METRICS_KEY}
     baseline = {"value": "bicubic"}
     include_hidden_charts = {"on": False}
 
@@ -449,7 +453,11 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
                 ).on_value_change(
                     lambda e: include_hidden_charts.update(on=e.value) or _render_charts()
                 )
+            if chart_type["value"] != "scatter":
+                with ui.row().classes("gap-1 flex-wrap items-center"):
+                    metric_filter_chips(settings.hero_metrics, chart_metric, _render_charts)
             ui.label(
+                "Metric: All metrics keeps one panel per metric. Pick VMAF, PSNR, … for a full-size chart. "
                 "Order applies to the category axis, or to individual bars on ranked/horizontal charts. "
                 "Use table sort plus “Table / custom order” to pin a specific sequence."
             ).classes("ma-hint")
@@ -483,7 +491,7 @@ def _workspace(video_id: str, settings: AppSettings) -> None:
             settings,
             title=title,
             subtitle=subtitle,
-            metrics=settings.hero_metrics,
+            metrics=resolve_metric_choice(chart_metric["value"], settings.hero_metrics),
             baseline=baseline["value"],
             order=chart_order["value"],
             group_by=group_by["value"],

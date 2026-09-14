@@ -103,11 +103,14 @@ Original CSVs are never rewritten. Soft-delete (Settings → Data) still exists 
 1. Open the video, hide the broken rows, sort by resolution.
 2. Turn on **Presentation**.
 3. Pick a chart type: small multiples (default), grouped bar, slope, delta, ranked bars, horizontal bars, heatmap, scatter, or radar.
-4. Set **Order** so categories or bars follow resolution, method, value (low→high or high→low), or the table’s custom order. Method order and resolution order live under Settings → Display.
-5. Optional: Settings → Charts → **Metric thresholds** (VMAF, PSNR, …). Charts get a dotted reference line; cells that miss the threshold are flagged. ↑ metrics fail below the line; ↓ metrics fail above it.
-6. Edit the chart title (`Beauty — 24 fps, upscaling to 4K`).
-7. Export **PNG 2×** (about 2000 px wide, white background), SVG / PDF, or **Export JSON**.
-8. Tables use tabular lining figures and never dump raw 15-decimal floats (VMAF 1 dp, PSNR 2, SSIM / LPIPS / ERQA 3).
+4. Use **Metric** to show **All metrics** (one panel per metric, the default) or a single one (VMAF, PSNR-Y, SSIM, …). The same control applies to every chart type, including those that used to plot only VMAF.
+5. Set **Order** so categories or bars follow resolution, method, value (low→high or high→low), or the table’s custom order. Method order and resolution order live under Settings → Display.
+6. Optional: Settings → Charts → **Metric thresholds** (VMAF, PSNR, …). Charts get a dotted reference line; cells that miss the threshold are flagged. ↑ metrics fail below the line; ↓ metrics fail above it.
+7. Edit the chart title (`Beauty — 24 fps, upscaling to 4K`).
+8. Export **PNG 2×** (about 2000 px wide, white background), SVG / PDF, or **Export JSON**.
+9. Tables use tabular lining figures and never dump raw 15-decimal floats (VMAF 1 dp, PSNR 2, SSIM / LPIPS / ERQA 3).
+
+**Compare** (nav item 2) takes two or more contents. Series align on method + resolution. The same All / specific metric control applies. **Export JSON** writes the aligned comparison (`kind: metric-atelier-comparison`) with each content’s metric values per combo.
 
 Direction is labeled on every column and axis (`↑` higher is better, `↓` lower is better). LPIPS and ERQA are treated as lower-is-better, matching the rest of this tool.
 

@@ -279,8 +279,37 @@ LOWER_IS_BETTER: frozenset[str] = frozenset(
 )
 
 
+ALL_METRICS_KEY = "all"
+
+
 def get_spec(key: str) -> MetricSpec | None:
     return CATALOG.get(key)
+
+
+def metric_choice_options(keys: Sequence[str] | None = None) -> dict[str, str]:
+    """Select options: All metrics, then each hero (or provided) metric."""
+    options = {ALL_METRICS_KEY: "All metrics"}
+    for key in keys or DEFAULT_HERO_METRICS:
+        spec = CATALOG.get(key)
+        options[key] = spec.short_label if spec else key
+    return options
+
+
+def resolve_metric_choice(
+    choice: str | None,
+    keys: Sequence[str] | None = None,
+) -> list[str]:
+    """Map All / a specific metric onto the list of keys a chart should plot."""
+    available = [key for key in (keys or DEFAULT_HERO_METRICS) if key in CATALOG]
+    if not available:
+        available = list(DEFAULT_HERO_METRICS)
+    if not choice or choice == ALL_METRICS_KEY:
+        return list(available)
+    if choice in available:
+        return [choice]
+    if choice in CATALOG:
+        return [choice]
+    return list(available)
 
 
 def threshold_status(

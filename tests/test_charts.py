@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from metric_atelier.charts import figure_for_type, order_runs_for_chart
+from metric_atelier.export import comparison_payload
 from metric_atelier.ingest import CsvSource
 from metric_atelier.models import AppSettings
 from metric_atelier.store import Store
@@ -70,3 +71,93 @@ def test_new_chart_types_build(store: Store, samples_dir: Path) -> None:
             order="value_desc",
         )
         assert fig.data
+
+
+def test_grouped_bar_specific_metric_uses_that_axis(store: Store, samples_dir: Path) -> None:
+    store.commit_sources([_source(samples_dir / "beauty.csv")])
+    settings = AppSettings()
+    runs = [run for run in store.list_runs("beauty") if not run.hidden]
+    fig = figure_for_type(
+        "grouped_bar",
+        runs,
+        settings,
+        title="t",
+        subtitle="s",
+        metrics=["psnr_y"],
+    )
+    title = fig.layout.yaxis.title.text or ""
+    assert "PSNR" in title
+    assert "VMAF" not in title
+
+
+def test_grouped_bar_all_metrics_builds_a_panel_per_metric(store: Store, samples_dir: Path) -> None:
+    store.commit_sources([_source(samples_dir / "beauty.csv")])
+    settings = AppSettings()
+    runs = [run for run in store.list_runs("beauty") if not run.hidden]
+    fig = figure_for_type(
+        "grouped_bar",
+        runs,
+        settings,
+        title="t",
+        subtitle="s",
+        metrics=["vmaf", "psnr_y", "ssim_y"],
+    )
+    assert fig.layout.yaxis is not None
+    assert fig.layout.yaxis2 is not None
+    assert fig.layout.yaxis3 is not None
+    titles = [
+        (fig.layout.annotations[i].text if i < len(fig.layout.annotations) else "")
+        for i in range(3)
+    ]
+    joined = " ".join(titles)
+    assert "VMAF" in joined
+    assert "PSNR" in joined
+
+
+def test_small_multiples_one_metric_is_a_single_panel(store: Store, samples_dir: Path) -> None:
+    store.commit_sources([_source(samples_dir / "beauty.csv")])
+    settings = AppSettings()
+    runs = [run for run in store.list_runs("beauty") if not run.hidden]
+    fig = figure_for_type(
+        "small_multiples",
+        runs,
+        settings,
+        title="t",
+        subtitle="s",
+        metrics=["vmaf"],
+    )
+    assert fig.data
+    assert getattr(fig.layout, "yaxis2", None) is None or fig.layout.yaxis2.domain is None
+
+
+def test_comparison_json_covers_multiple_contents(store: Store, samples_dir: Path) -> None:
+    store.commit_sources(
+        [_source(samples_dir / "beauty.csv"), _source(samples_dir / "kartingtime.csv")]
+    )
+    settings = AppSettings()
+    beauty = store.get_video("beauty")
+    karting = store.get_video("kartingtime")
+    assert beauty is not None and karting is not None
+    series = {
+        beauty.display_name: [run for run in store.list_runs("beauty") if not run.hidden],
+        karting.display_name: [run for run in store.list_runs("kartingtime") if not run.hidden],
+    }
+    payload = comparison_payload(
+        series,
+        settings,
+        metrics=["vmaf", "psnr_y"],
+        contents=[
+            {"video_id": "beauty", "display_name": beauty.display_name},
+            {"video_id": "kartingtime", "display_name": karting.display_name},
+        ],
+    )
+    assert payload["kind"] == "metric-atelier-comparison"
+    assert payload["metrics"] == ["vmaf", "psnr_y"]
+    assert [item["video_id"] for item in payload["contents"]] == ["beauty", "kartingtime"]
+    assert payload["rows"]
+    matched = [row for row in payload["rows"] if row["by_content"]["beauty"] is not None]
+    assert matched
+    sample = matched[0]["by_content"]["beauty"]
+    assert "metrics" in sample
+    assert "vmaf" in sample["metrics"] or "psnr_y" in sample["metrics"]
+    assert "resolution" in sample

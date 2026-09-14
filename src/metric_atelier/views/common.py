@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
 from nicegui import app, ui
 
 from metric_atelier.ingest import CsvSource, collect_csv_paths
-from metric_atelier.metrics import format_metric
+from metric_atelier.metrics import ALL_METRICS_KEY, format_metric, metric_choice_options
 from metric_atelier.models import AppSettings, RunDTO
 from metric_atelier.store import get_store
 from metric_atelier.theme import apply_theme, method_color
@@ -37,6 +37,39 @@ def format_fps(value: float | None) -> str:
 
 def metric_cell(run: RunDTO, key: str, settings: AppSettings) -> str:
     return format_metric(key, run.metric(key), decimals=settings.decimal_places)
+
+
+def metric_filter_chips(
+    hero_metrics: Sequence[str],
+    state: dict[str, str],
+    on_change: Callable[[], None],
+) -> None:
+    """Exclusive All / VMAF / PSNR / … chips. ``state['value']`` holds the choice."""
+    options = metric_choice_options(hero_metrics)
+    current = state.get("value") or ALL_METRICS_KEY
+    if current not in options:
+        current = ALL_METRICS_KEY
+        state["value"] = current
+    ui.label("Metric").classes("ma-hint self-center")
+    for key, label in options.items():
+        ui.chip(
+            label,
+            selectable=True,
+            selected=key == current,
+            color=None,
+            on_selection_change=lambda e, k=key: _toggle_metric_chip(e, k, state, on_change),
+        ).props("outline dense")
+
+
+def _toggle_metric_chip(e, key: str, state: dict[str, str], on_change: Callable[[], None]) -> None:
+    if e.value:
+        if state.get("value") == key:
+            return
+        state["value"] = key
+        on_change()
+        return
+    if state.get("value") == key:
+        on_change()
 
 
 def nav_class(active: str, name: str) -> str:
