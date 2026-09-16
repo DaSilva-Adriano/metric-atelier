@@ -5,13 +5,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import Column, DateTime, Float
 from sqlalchemy.types import JSON
 from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
 
-from metric_atelier.metrics import DEFAULT_DECIMALS, DEFAULT_HERO_METRICS, DEFAULT_Y_AXIS_ZERO
+from metric_atelier.metrics import (
+    DEFAULT_DECIMALS,
+    DEFAULT_HERO_METRICS,
+    DEFAULT_Y_AXIS_ZERO,
+    parse_threshold_list,
+)
 
 UNASSIGNED_VIDEO_ID = "unassigned"
 
@@ -116,7 +121,7 @@ class AppSettings(BaseModel):
         default_factory=lambda: ["360p", "480p", "720p", "1080p", "1440p", "2160p"]
     )
     method_order: list[str] = Field(default_factory=lambda: list(DEFAULT_METHOD_ORDER))
-    metric_thresholds: dict[str, float] = Field(default_factory=dict)
+    metric_thresholds: dict[str, list[float]] = Field(default_factory=dict)
     show_raw_filenames: bool = False
     show_full_method_name: bool = False
     language: str = "en"
@@ -152,6 +157,18 @@ class AppSettings(BaseModel):
             "notes",
         ]
     )
+
+    @field_validator("metric_thresholds", mode="before")
+    @classmethod
+    def _coerce_metric_thresholds(cls, value: Any) -> dict[str, list[float]]:
+        if not value or not isinstance(value, dict):
+            return {}
+        out: dict[str, list[float]] = {}
+        for key, raw in value.items():
+            parsed = parse_threshold_list(raw)
+            if parsed:
+                out[str(key)] = parsed
+        return out
 
 
 class SourceVideo(SQLModel, table=True):

@@ -49,7 +49,7 @@ def test_ranked_bar_respects_custom_order(store: Store, samples_dir: Path) -> No
 
 def test_new_chart_types_build(store: Store, samples_dir: Path) -> None:
     store.commit_sources([_source(samples_dir / "beauty.csv")])
-    settings = AppSettings(metric_thresholds={"vmaf": 80.0})
+    settings = AppSettings(metric_thresholds={"vmaf": [80.0]})
     runs = [run for run in store.list_runs("beauty") if not run.hidden]
     for chart_type in (
         "small_multiples",
@@ -112,6 +112,29 @@ def test_grouped_bar_all_metrics_builds_a_panel_per_metric(store: Store, samples
     joined = " ".join(titles)
     assert "VMAF" in joined
     assert "PSNR" in joined
+
+
+def test_ranked_bar_draws_one_line_per_threshold(store: Store, samples_dir: Path) -> None:
+    store.commit_sources([_source(samples_dir / "beauty.csv")])
+    settings = AppSettings(metric_thresholds={"vmaf": [70.0, 80.0, 90.0]})
+    runs = [run for run in store.list_runs("beauty") if not run.hidden]
+    fig = figure_for_type(
+        "ranked_bar",
+        runs,
+        settings,
+        title="t",
+        subtitle="s",
+        metrics=["vmaf"],
+    )
+    shapes = list(fig.layout.shapes or [])
+    ys = sorted(
+        {float(shape.y0) for shape in shapes if getattr(shape, "y0", None) is not None}
+    )
+    assert ys == [70.0, 80.0, 90.0]
+    texts = [ann.text for ann in (fig.layout.annotations or []) if ann.text]
+    assert any("70" in text for text in texts)
+    assert any("80" in text for text in texts)
+    assert any("90" in text for text in texts)
 
 
 def test_small_multiples_one_metric_is_a_single_panel(store: Store, samples_dir: Path) -> None:

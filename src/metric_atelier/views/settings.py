@@ -6,7 +6,12 @@ import json
 
 from nicegui import ui
 
-from metric_atelier.metrics import CATALOG, DEFAULT_HERO_METRICS
+from metric_atelier.metrics import (
+    CATALOG,
+    DEFAULT_HERO_METRICS,
+    format_threshold_input,
+    parse_threshold_list,
+)
 from metric_atelier.models import CHART_ORDER_LABELS, CHART_TYPE_LABELS, AppSettings, IdentityRule
 from metric_atelier.store import get_store, open_directory
 from metric_atelier.theme import OKABE_ITO
@@ -238,9 +243,9 @@ def _charts_panel(store, settings: AppSettings) -> None:
     ui.separator()
     ui.label("Metric thresholds").classes("text-sm uppercase tracking-wide")
     ui.label(
-        "Drawn as a dotted reference line on charts. Table cells that miss the threshold "
-        "are flagged. For ↑ metrics, values below the line fail; for ↓ metrics, values above fail. "
-        "Leave empty to disable."
+        "Drawn as dotted reference lines on charts. Separate several values with a comma "
+        "(e.g. 80, 90, 95). Table cells that miss every line are flagged: ↑ metrics fail "
+        "below the lowest line; ↓ metrics fail above the highest. Leave empty to disable."
     ).classes("ma-hint")
     with ui.row().classes("gap-3 flex-wrap"):
         for key in DEFAULT_HERO_METRICS:
@@ -248,8 +253,8 @@ def _charts_panel(store, settings: AppSettings) -> None:
             current = settings.metric_thresholds.get(key)
             ui.input(
                 f"{spec.short_label} ({spec.arrow})",
-                value="" if current is None else str(current),
-            ).classes("w-36").props("dense outlined clearable").on_value_change(
+                value=format_threshold_input(current),
+            ).classes("w-56").props("dense outlined clearable").on_value_change(
                 lambda e, k=key: _set_threshold(store, k, e.value)
             )
 
@@ -264,13 +269,14 @@ def _set_zero(store, key: str, on: bool) -> None:
 def _set_threshold(store, key: str, value) -> None:
     settings = store.get_settings()
     thresholds = dict(settings.metric_thresholds)
-    if value is None or value == "":
+    raw = "" if value is None else str(value).strip()
+    if not raw:
         thresholds.pop(key, None)
     else:
-        try:
-            thresholds[key] = float(value)
-        except (TypeError, ValueError):
+        parsed = parse_threshold_list(raw)
+        if not parsed:
             return
+        thresholds[key] = parsed
     _save(store, metric_thresholds=thresholds)
 
 

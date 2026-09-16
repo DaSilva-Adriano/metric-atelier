@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from statistics import median
-from typing import Literal
+from typing import Any, Literal
 
 Direction = Literal["higher", "lower"]
 Family = Literal["fidelity", "perceptual-score", "perceptual-distance", "reconstruction"]
@@ -312,31 +312,86 @@ def resolve_metric_choice(
     return list(available)
 
 
+def parse_threshold_list(value: Any) -> list[float]:
+    """Turn a number, list, or comma-separated string into unique floats (order kept)."""
+    if value is None or value == "":
+        return []
+    if isinstance(value, bool):
+        return []
+    if isinstance(value, int | float):
+        number = float(value)
+        return [] if number != number else [number]
+    if isinstance(value, str):
+        items: list[Any] = value.replace(";", ",").split(",")
+    elif isinstance(value, Sequence) and not isinstance(value, bytes | bytearray):
+        items = list(value)
+    else:
+        return []
+    out: list[float] = []
+    seen: set[float] = set()
+    for item in items:
+        if item is None or item == "":
+            continue
+        try:
+            number = float(str(item).strip())
+        except (TypeError, ValueError):
+            continue
+        if number != number or number in seen:
+            continue
+        seen.add(number)
+        out.append(number)
+    return out
+
+
+def format_threshold_input(value: Any) -> str:
+    """Pretty comma-separated text for the settings field."""
+    parts: list[str] = []
+    for number in parse_threshold_list(value):
+        if number.is_integer():
+            parts.append(str(int(number)))
+        else:
+            parts.append(f"{number:.12g}")
+    return ", ".join(parts)
+
+
+def threshold_values(
+    thresholds: Mapping[str, Any] | None,
+    key: str,
+) -> list[float]:
+    if not thresholds or key not in thresholds:
+        return []
+    return parse_threshold_list(thresholds[key])
+
+
 def threshold_status(
     key: str,
     value: float | None,
-    thresholds: Mapping[str, float] | None,
+    thresholds: Mapping[str, Any] | None,
 ) -> Literal["pass", "fail", "none"]:
-    """Compare a value to a user threshold. Empty/missing threshold → none."""
-    if value is None or not thresholds or key not in thresholds:
+    """Compare a value to user thresholds. Empty/missing → none.
+
+    Several lines are visual references; a cell fails only if it misses every
+    line (below the lowest ↑ threshold, or above the highest ↓ threshold).
+    """
+    limits = threshold_values(thresholds, key)
+    if value is None or not limits:
         return "none"
     try:
-        limit = float(thresholds[key])
         number = float(value)
     except (TypeError, ValueError):
         return "none"
-    if number != number or limit != limit:
+    if number != number:
         return "none"
     spec = CATALOG.get(key)
     if spec is not None and spec.direction == "lower":
-        return "fail" if number > limit else "pass"
-    return "fail" if number < limit else "pass"
+        return "fail" if number > max(limits) else "pass"
+    return "fail" if number < min(limits) else "pass"
 
 
 def threshold_failed(
     key: str,
     value: float | None,
-    thresholds: Mapping[str, float] | None,
+    thresholds: Mapping[str, Any] | None,
 ) -> bool:
     return threshold_status(key, value, thresholds) == "fail"
 

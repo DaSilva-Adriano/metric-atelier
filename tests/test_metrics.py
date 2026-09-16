@@ -6,10 +6,13 @@ from metric_atelier.metrics import (
     DEFAULT_HERO_METRICS,
     direction_caption,
     format_metric,
+    format_threshold_input,
     metric_choice_options,
+    parse_threshold_list,
     resolve_metric_choice,
     threshold_status,
 )
+from metric_atelier.models import AppSettings
 
 
 def test_hero_metrics_present() -> None:
@@ -51,3 +54,29 @@ def test_threshold_status_respects_direction() -> None:
     assert threshold_status("lpips", 0.4, thresholds) == "fail"
     assert threshold_status("vmaf", 90.0, {}) == "none"
     assert threshold_status("vmaf", None, thresholds) == "none"
+
+
+def test_parse_threshold_list_splits_on_comma() -> None:
+    assert parse_threshold_list("80, 90, 95") == [80.0, 90.0, 95.0]
+    assert parse_threshold_list("80,90") == [80.0, 90.0]
+    assert parse_threshold_list("80, , 90") == [80.0, 90.0]
+    assert parse_threshold_list("80, 80, 90") == [80.0, 90.0]
+    assert parse_threshold_list(80) == [80.0]
+    assert parse_threshold_list([70, "80"]) == [70.0, 80.0]
+    assert parse_threshold_list("") == []
+    assert parse_threshold_list("nope") == []
+    assert format_threshold_input([80.0, 90.5]) == "80, 90.5"
+
+
+def test_threshold_status_uses_most_lenient_of_several() -> None:
+    thresholds = {"vmaf": [80.0, 90.0, 95.0], "lpips": [0.1, 0.2]}
+    assert threshold_status("vmaf", 85.0, thresholds) == "pass"
+    assert threshold_status("vmaf", 70.0, thresholds) == "fail"
+    assert threshold_status("lpips", 0.15, thresholds) == "pass"
+    assert threshold_status("lpips", 0.4, thresholds) == "fail"
+
+
+def test_settings_coerce_legacy_single_threshold() -> None:
+    settings = AppSettings(metric_thresholds={"vmaf": 80.0, "psnr_y": "32, 35"})
+    assert settings.metric_thresholds["vmaf"] == [80.0]
+    assert settings.metric_thresholds["psnr_y"] == [32.0, 35.0]

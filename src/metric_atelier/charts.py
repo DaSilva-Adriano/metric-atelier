@@ -14,7 +14,7 @@ from metric_atelier.grouping import (
     reference_label,
     sort_runs,
 )
-from metric_atelier.metrics import CATALOG, direction_caption, format_metric
+from metric_atelier.metrics import CATALOG, direction_caption, format_metric, threshold_values
 from metric_atelier.models import DEFAULT_METHOD_ORDER, AppSettings, RunDTO, SourceVideo
 from metric_atelier.theme import RESOLUTION_SYMBOLS, method_color, resolution_color, theme_colors
 
@@ -322,33 +322,30 @@ def _add_threshold_line(
     col: int | None = None,
     orientation: str = "h",
 ) -> None:
-    raw = (settings.metric_thresholds or {}).get(key)
-    if raw is None:
-        return
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
+    values = threshold_values(settings.metric_thresholds, key)
+    if not values:
         return
     colors = theme_colors(settings)
-    label = format_metric(key, value, decimals=settings.decimal_places)
-    kwargs: dict = dict(
-        line_dash="dot",
-        line_color=colors.muted,
-        line_width=1,
-        annotation_text=f"threshold {label}",
-        annotation_font=dict(size=11, color=colors.muted),
-        annotation_position="top right",
-    )
-    if orientation == "v":
+    for value in values:
+        label = format_metric(key, value, decimals=settings.decimal_places)
+        kwargs: dict = dict(
+            line_dash="dot",
+            line_color=colors.muted,
+            line_width=1,
+            annotation_text=f"threshold {label}",
+            annotation_font=dict(size=11, color=colors.muted),
+            annotation_position="top right",
+        )
+        if orientation == "v":
+            if row is not None and col is not None:
+                fig.add_vline(x=value, row=row, col=col, **kwargs)
+            else:
+                fig.add_vline(x=value, **kwargs)
+            continue
         if row is not None and col is not None:
-            fig.add_vline(x=value, row=row, col=col, **kwargs)
+            fig.add_hline(y=value, row=row, col=col, **kwargs)
         else:
-            fig.add_vline(x=value, **kwargs)
-        return
-    if row is not None and col is not None:
-        fig.add_hline(y=value, row=row, col=col, **kwargs)
-    else:
-        fig.add_hline(y=value, **kwargs)
+            fig.add_hline(y=value, **kwargs)
 
 
 def _unique_run_labels(runs: Sequence[RunDTO], settings: AppSettings) -> list[str]:
