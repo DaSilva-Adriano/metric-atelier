@@ -129,3 +129,7 @@ uv run ruff format src tests
 Settings → Data → **Export annotations JSON** saves names, notes, tags, hidden flags, order, and chart settings. Re-import it after loading the same CSVs on another machine.
 
 **Export JSON** on a video (or Settings → Data → **Export dataset JSON**) writes a dataset file where `method` (`vsr`, `bicubic`, …) and `resolution` (`720p`, `1080p`, …) are first-class fields, along with metric values. Do not parse those out of `raw_name` — the filename is only a label.
+
+## License
+
+Metric Atelier is free software under the [GNU General Public License v3.0 or later](LICENSE).
