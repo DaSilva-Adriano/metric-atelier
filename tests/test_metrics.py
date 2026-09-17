@@ -20,7 +20,8 @@ def test_hero_metrics_present() -> None:
         assert key in CATALOG
     assert CATALOG["vmaf"].direction == "higher"
     assert CATALOG["lpips"].direction == "lower"
-    assert CATALOG["erqa"].direction == "lower"
+    assert CATALOG["erqa"].direction == "higher"
+    assert CATALOG["erqa_min"].direction == "higher"
 
 
 def test_direction_caption() -> None:
@@ -28,6 +29,11 @@ def test_direction_caption() -> None:
     assert "higher is better" in text
     assert "lower is better" in text
     assert "LPIPS" in text
+    assert "ERQA" in text
+    higher_line, lower_line = text.split("<br>")
+    assert "ERQA" in higher_line
+    assert "LPIPS" in lower_line
+    assert "ERQA" not in lower_line
 
 
 def test_format_none() -> None:
@@ -47,11 +53,13 @@ def test_metric_choice_all_or_specific() -> None:
 
 
 def test_threshold_status_respects_direction() -> None:
-    thresholds = {"vmaf": 80.0, "lpips": 0.2}
+    thresholds = {"vmaf": 80.0, "lpips": 0.2, "erqa": 0.7}
     assert threshold_status("vmaf", 90.0, thresholds) == "pass"
     assert threshold_status("vmaf", 70.0, thresholds) == "fail"
     assert threshold_status("lpips", 0.1, thresholds) == "pass"
     assert threshold_status("lpips", 0.4, thresholds) == "fail"
+    assert threshold_status("erqa", 0.8, thresholds) == "pass"
+    assert threshold_status("erqa", 0.5, thresholds) == "fail"
     assert threshold_status("vmaf", 90.0, {}) == "none"
     assert threshold_status("vmaf", None, thresholds) == "none"
 

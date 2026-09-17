@@ -112,7 +112,7 @@ Original CSVs are never rewritten. Soft-delete (Settings → Data) still exists 
 
 **Compare** (nav item 2) takes two or more contents. Series align on method + resolution. The same All / specific metric control applies. **Export JSON** writes the aligned comparison (`kind: metric-atelier-comparison`) with each content’s metric values per combo.
 
-Direction is labeled on every column and axis (`↑` higher is better, `↓` lower is better). LPIPS and ERQA are treated as lower-is-better, matching the rest of this tool.
+Direction is labeled on every column and axis (`↑` higher is better, `↓` lower is better). LPIPS is lower-is-better; ERQA is higher-is-better (1.0 is perfect restoration).
 
 Figure export uses Plotly + Kaleido. Kaleido 1.x needs a local Chrome/Chromium. If PNG/PDF fails, an HTML fallback is written next to the export and the UI says so.
 

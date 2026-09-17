@@ -185,7 +185,7 @@ CATALOG: dict[str, MetricSpec] = {
             "erqa",
             "ERQA",
             "Edge Restoration Quality Assessment",
-            "lower",
+            "higher",
             "reconstruction",
             3,
             0,
@@ -240,10 +240,10 @@ CATALOG: dict[str, MetricSpec] = {
             0,
             1,
         ),
-        _spec("erqa_min", "ERQA min", "ERQA (minimum)", "lower", "reconstruction", 3, 0, 1),
-        _spec("erqa_max", "ERQA max", "ERQA (maximum)", "lower", "reconstruction", 3, 0, 1),
-        _spec("erqa_p50", "ERQA p50", "ERQA (median)", "lower", "reconstruction", 3, 0, 1),
-        _spec("erqa_p95", "ERQA p95", "ERQA (95th percentile)", "lower", "reconstruction", 3, 0, 1),
+        _spec("erqa_min", "ERQA min", "ERQA (minimum)", "higher", "reconstruction", 3, 0, 1),
+        _spec("erqa_max", "ERQA max", "ERQA (maximum)", "higher", "reconstruction", 3, 0, 1),
+        _spec("erqa_p50", "ERQA p50", "ERQA (median)", "higher", "reconstruction", 3, 0, 1),
+        _spec("erqa_p95", "ERQA p95", "ERQA (95th percentile)", "higher", "reconstruction", 3, 0, 1),
     )
 }
 
